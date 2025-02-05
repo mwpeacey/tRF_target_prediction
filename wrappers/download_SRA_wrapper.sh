@@ -38,7 +38,7 @@ for code in $codes; do
 	qsub -N ${code}_download_SRA \
 	-o ${OUTPUT}/${code}_SRA_download_output.txt \
 	-e ${OUTPUT}/${code}_SRA_download_output.txt \
-	/grid/schorn/home/mpeacey/scripts/tRF_target_prediction/download_SRA.sh \
+	/grid/schorn/home/mpeacey/scripts/tRF_target_prediction/transcriptome_assembly/download_SRA.sh \
 	${code} ${OUTPUT}
 
 done
