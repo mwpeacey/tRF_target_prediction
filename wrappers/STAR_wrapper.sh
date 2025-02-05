@@ -40,7 +40,7 @@ for SAMPLE in *_1.fastq; do
 	qsub -N ${SAMPLE_NAME}_STAR \
              -o ${DATA_DIRECTORY}/${RUN_NAME}/${SAMPLE_NAME}_STAR_output.txt \
              -e ${DATA_DIRECTORY}/${RUN_NAME}/${SAMPLE_NAME}_STAR_output.txt \
-             /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/STAR_align.sh \
+             /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/transcriptome_assembly/STAR_align.sh \
              ${DATA_DIRECTORY} ${FASTQ_DIRECTORY} ${RUN_NAME} ${INDEX_DIRECTORY} ${SAMPLE_NAME} ${R1} ${R2}
 
 done

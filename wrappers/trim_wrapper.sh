@@ -37,7 +37,7 @@ for SAMPLE in *_1.fastq; do
 		qsub -N ${SAMPLE_NAME}_trim \
 		-o ${FASTQ_DIRECTORY}/cutadapt_processed/${SAMPLE_NAME}_trim_output.txt \
 		-e ${FASTQ_DIRECTORY}/cutadapt_processed/${SAMPLE_NAME}_trim_output.txt \
-		/grid/schorn/home/mpeacey/scripts/tRF_target_prediction/trim.sh \
+		/grid/schorn/home/mpeacey/scripts/tRF_target_prediction/transcriptome_assembly/trim.sh \
 		${FASTQ_DIRECTORY} ${SAMPLE_NAME} ${FWD_ADAPTER} ${REV_ADAPTER}
 
 	else
@@ -45,7 +45,7 @@ for SAMPLE in *_1.fastq; do
 		qsub -N ${SAMPLE_NAME}_trim \
                 -o ${FASTQ_DIRECTORY}/cutadapt_processed/${SAMPLE_NAME}_trim_output.txt \
                 -e ${FASTQ_DIRECTORY}/cutadapt_processed/${SAMPLE_NAME}_trim_output.txt \
-                /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/trim_no_adapter.sh \
+                /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/transcriptome_assembly/trim_no_adapter.sh \
                 ${FASTQ_DIRECTORY} ${SAMPLE_NAME}
 
 	fi
