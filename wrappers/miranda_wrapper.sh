@@ -6,13 +6,30 @@
 #$ -o miranda_wrapper_output.txt
 #$ -e miranda_wrapper_output.txt
 
-SMALL_RNA_FASTA=$1
-TRANSCRIPTOME_FASTA=$2
-RUN_ID=$3
-RUN_MODE=$4
+## Description
+## Uses miRanda to predict tRF or miRNA targets in an input transcriptome.
 
-cd /grid/schorn/home/mpeacey/tRF_targets/data/miranda_output
+## Requirements
+## miRanda v1.9
 
+## Inputs
+## $1 : scripts root directory (e.g. /grid/schorn/home/mpeacey/scripts/tRF_target_prediction)
+## $2 : fasta of small RNAs (e.g. tRF3b sequences).
+## $3 : fasta of transcripts to scan.
+## $4 : output directory.
+## $5 : ID for the run, used as the directory name in the output directory.
+## $6 : determines the settings to use for miRanda. "miRNA" runs with standard seed-weighting,
+##      whereas "tRF" runs with seed-weighting removed and the alignment score threshold adjusted
+##      accordingly.
+
+SCRIPTS=$1
+SMALL_RNA_FASTA=$2
+TRANSCRIPTOME_FASTA=$3
+OUTPUT_DIRECTORY=$4
+RUN_ID=$5
+RUN_MODE=$6
+
+cd ${OUTPUT_DIRECTORY}
 mkdir ${RUN_ID}
 cd ${RUN_ID}
 
@@ -64,7 +81,7 @@ rm temp_lines.txt
 
 for sRNA in $(cat sRNA_list.txt); do
 
-	cd /grid/schorn/home/mpeacey/tRF_targets/data/miranda_output/${RUN_ID}
+	cd ${OUTPUT_DIRECTORY}/${RUN_ID}
 
 	echo "Submitting job for sRNA ${sRNA}..."
 
@@ -74,8 +91,9 @@ for sRNA in $(cat sRNA_list.txt); do
 	cat ${SMALL_RNA_FASTA} | sed -n "/${sRNA}/,/>/p" | head -2 > temp_${sRNA}.fasta
 
 	qsub -N ${RUN_ID}_${sRNA}_miranda \
-	-o ${RUN_ID}_${sRNA}_miranda_output.txt -e ${RUN_ID}_${sRNA}_miranda_output.txt \
-	/grid/schorn/home/mpeacey/scripts/miranda/miranda_v3/miranda_v3.sh \
+	-o ${OUTPUT_DIRECTORY}/${RUN_ID}_${sRNA}_miranda_output.txt \
+	-e ${OUTPUT_DIRECTORY}/${RUN_ID}_${sRNA}_miranda_output.txt \
+	${SCRIPTS}/miranda/miranda_new.sh \
 	${SMALL_RNA_FASTA} ${TRANSCRIPTOME_FASTA} ${RUN_ID} \
 	${sRNA} ${RUN_MODE}
 
