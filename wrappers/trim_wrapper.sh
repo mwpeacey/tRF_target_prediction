@@ -13,16 +13,18 @@
 ## cutadapt v4.5
 
 ## Inputs
-## $1 : Full path to data directory
-## $2 : include adapter trimming (T) or skip if adapters have already been trimmed (F).
+## $1 : scripts root directory (e.g. /grid/schorn/home/mpeacey/scripts/tRF_target_prediction)
+## $2 : Full path to data directory
+## $3 : include adapter trimming (T) or skip if adapters have already been trimmed (F).
 ##      If F then no adapter sequences need be specified. 
-## $3 : Forward adapter sequence (e.g. Truseq: AGATCGGAAGAGCACACGTCTGAACTCCAGTCA)
-## $4 : Reverse adapter sequence (e.g. Truseq: AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT)
+## $4 : Forward adapter sequence (e.g. Truseq: AGATCGGAAGAGCACACGTCTGAACTCCAGTCA)
+## $5 : Reverse adapter sequence (e.g. Truseq: AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT)
 
-FASTQ_DIRECTORY=$1
-ADAPTER=$2
-FWD_ADAPTER=$3
-REV_ADAPTER=$4
+SCRIPTS=$1
+FASTQ_DIRECTORY=$2
+ADAPTER=$3
+FWD_ADAPTER=$4
+REV_ADAPTER=$5
 
 cd ${FASTQ_DIRECTORY}
 mkdir cutadapt_processed
@@ -37,7 +39,7 @@ for SAMPLE in *_1.fastq; do
 		qsub -N ${SAMPLE_NAME}_trim \
 		-o ${FASTQ_DIRECTORY}/cutadapt_processed/${SAMPLE_NAME}_trim_output.txt \
 		-e ${FASTQ_DIRECTORY}/cutadapt_processed/${SAMPLE_NAME}_trim_output.txt \
-		/grid/schorn/home/mpeacey/scripts/tRF_target_prediction/transcriptome_assembly/trim.sh \
+		${SCRIPTS}/transcriptome_assembly/trim.sh \
 		${FASTQ_DIRECTORY} ${SAMPLE_NAME} ${FWD_ADAPTER} ${REV_ADAPTER}
 
 	else
@@ -45,7 +47,7 @@ for SAMPLE in *_1.fastq; do
 		qsub -N ${SAMPLE_NAME}_trim \
                 -o ${FASTQ_DIRECTORY}/cutadapt_processed/${SAMPLE_NAME}_trim_output.txt \
                 -e ${FASTQ_DIRECTORY}/cutadapt_processed/${SAMPLE_NAME}_trim_output.txt \
-                /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/transcriptome_assembly/trim_no_adapter.sh \
+                ${SCRIPTS}/transcriptome_assembly/trim_no_adapter.sh \
                 ${FASTQ_DIRECTORY} ${SAMPLE_NAME}
 
 	fi
