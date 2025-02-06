@@ -8,7 +8,7 @@
 ## Designed for use with stringtie_wrapper.sh
 
 ## Requirements
-## stringtie v2.2.1 (conda environment stringtie)
+## stringtie v3.0.0 (conda environment stringtie)
 
 echo "#########################"
 echo "New run started on $(date)"
@@ -20,6 +20,7 @@ REFERENCE=$3
 SAMPLE=$4
 SAMPLE_NAME=$5
 STRANDEDNESS=$6
+RUN_ID=$7
 
 cd ${ALIGNMENT_DIRECTORY}
 
@@ -31,7 +32,7 @@ echo "Strandedness : ${STRANDEDNESS}"
 if [ ${STRANDEDNESS} -eq 0 ]
 then
 
-	stringtie -o ${DATA_DIRECTORY}/stringtie/${SAMPLE_NAME}_stringtie-output.gtf \
+	stringtie -o ${DATA_DIRECTORY}/stringtie/${RUN_ID}/${SAMPLE_NAME}_stringtie-output.gtf \
 	 	  -G ${REFERENCE} \
 	  	  -p 4 -c 2 -f 0.05 -j 2 -s 5 \
           	  ${SAMPLE}
@@ -39,7 +40,7 @@ then
 elif [ ${STRANDEDNESS} -eq 1 ]
 then
 
-	stringtie -o ${DATA_DIRECTORY}/stringtie/${SAMPLE_NAME}_stringtie-output.gtf \
+	stringtie -o ${DATA_DIRECTORY}/stringtie/${RUN_ID}/${SAMPLE_NAME}_stringtie-output.gtf \
                   -G ${REFERENCE} \
                   -p 4 -c 2 -f 0.05 -j 2 -s 5 \
 	 	  --fr \
@@ -48,7 +49,7 @@ then
 elif [ ${STRANDEDNESS} -eq 2 ]
 then
 
-	stringtie -o ${DATA_DIRECTORY}/stringtie/${SAMPLE_NAME}_stringtie-output.gtf \
+	stringtie -o ${DATA_DIRECTORY}/stringtie/${RUN_ID}/${SAMPLE_NAME}_stringtie-output.gtf \
                   -G ${REFERENCE} \
                   -p 4 -c 2 -f 0.05 -j 2 -s 5 \
                   --rf \
