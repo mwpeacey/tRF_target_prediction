@@ -6,9 +6,9 @@ library(glue)
 library(stringr)
 library(tidyverse)
 
-genome = 'hg38'
+genome = 'mm10'
 
-tRNA_fasta = Biostrings::readRNAStringSet(glue("~/data/{genome}-mature-tRNAs.fa"),
+tRNA_fasta = Biostrings::readRNAStringSet(glue("import/{genome}-mature-tRNAs.fa"),
                                      format = 'fasta')
 
 tRNA_fasta = DNAStringSet(tRNA_fasta)
@@ -34,7 +34,7 @@ for (i in 1:nrow(tRNA_df)){
 
 seqinr::write.fasta(sequences = as.list(tRNA_df$sequence),
                     names = as.list(tRNA_df$name),
-                    file.out = glue::glue('~/tRF_targets_new/{genome}_tRNA.fasta'),
+                    file.out = glue::glue('import/{genome}_tRNA.fasta'),
                     as.string = T)
 
 ###############################################################################
@@ -69,10 +69,10 @@ df$unique_name = unique_name
 
 seqinr::write.fasta(sequences = as.list(df$sequence),
                     names = as.list(df$unique_name),
-                    file.out = glue::glue('~/tRF_targets_new/{genome}_tRF3a.fasta'),
+                    file.out = glue::glue('import/{genome}_tRF3a.fasta'),
                     as.string = T)
 
-write_csv(df, file = glue('~/tRF_targets_new/{genome}_tRF3a.csv'))
+write_csv(df, file = glue('import/{genome}_tRF3a.csv'))
 
 ###############################################################################
 ## Generate tRF3b fasta
@@ -106,7 +106,7 @@ df$unique_name = unique_name
 
 seqinr::write.fasta(sequences = as.list(df$sequence),
                     names = as.list(df$unique_name),
-                    file.out = glue::glue('~/tRF_targets_new/{genome}_tRF3b.fasta'),
+                    file.out = glue::glue('import/{genome}_tRF3b.fasta'),
                     as.string = T)
 
-write_csv(df, file = glue('~/tRF_targets_new/{genome}_tRF3b.csv'))
+write_csv(df, file = glue('import/{genome}_tRF3b.csv'))
