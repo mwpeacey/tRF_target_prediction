@@ -47,7 +47,7 @@ while read -r transcript; do
 
   # Choose miranda parameters based on the run mode
   if [[ ${RUN_MODE} == 'tRF' ]]; then
-    miranda "$SMALL_RNA_FASTA" "temp_${transcript}.fasta" -out "result_${sRNA}_${transcript}" -sc 70.0 -en -20.0 -scale 1.0 -loose
+    miranda "$SMALL_RNA_FASTA" "temp_${transcript}.fasta" -out "result_${sRNA}_${transcript}" -sc 75.0 -en -20.0 -scale 1.0 -loose
   elif [[ ${RUN_MODE} == 'miRNA' ]]; then
     miranda "$SMALL_RNA_FASTA" "temp_${transcript}.fasta" -out "result_${sRNA}_${transcript}" -sc 120.0
   else
