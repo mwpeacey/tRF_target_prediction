@@ -13,15 +13,17 @@
 ## STAR (v2.7.11a)
 
 ## Inputs
-## $1 : full path to data directory.
-## $2 : full path to directory containing adapter-trimmed reads.
-## $3 : run identifier (used as output folder name in data directory).
-## $4 : full path to STAR index
+## $1 : scripts root directory (e.g. /grid/schorn/home/mpeacey/scripts/tRF_target_prediction)
+## $2 : full path to data directory.
+## $3 : full path to directory containing adapter-trimmed reads.
+## $4 : run identifier (used as output folder name in data directory).
+## $5 : full path to STAR index
 
-DATA_DIRECTORY=$1
-FASTQ_DIRECTORY=$2
-RUN_NAME=$3
-INDEX_DIRECTORY=$4
+SCRIPTS=$1
+DATA_DIRECTORY=$2
+FASTQ_DIRECTORY=$3
+RUN_NAME=$4
+INDEX_DIRECTORY=$5
 
 cd ${DATA_DIRECTORY}
 mkdir ${RUN_NAME}
@@ -40,7 +42,7 @@ for SAMPLE in *_1.fastq; do
 	qsub -N ${SAMPLE_NAME}_STAR \
              -o ${DATA_DIRECTORY}/${RUN_NAME}/${SAMPLE_NAME}_STAR_output.txt \
              -e ${DATA_DIRECTORY}/${RUN_NAME}/${SAMPLE_NAME}_STAR_output.txt \
-             /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/transcriptome_assembly/STAR_align.sh \
+             ${SCRIPTS}/transcriptome_assembly/STAR_align.sh \
              ${DATA_DIRECTORY} ${FASTQ_DIRECTORY} ${RUN_NAME} ${INDEX_DIRECTORY} ${SAMPLE_NAME} ${R1} ${R2}
 
 done
