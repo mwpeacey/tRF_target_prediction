@@ -19,41 +19,44 @@
 ## $3 : full path to directory containing .bam output from alignment.
 ## $4 : full path to GTF reference annotation file.
 ## $5 : read strandedness (0 for unstranded, 1 for second strand, 2 for first strand).
-## $6 : Not in use. Used to optimize parameters.
+## $6 : ID for the run
+## $7 : Not in use. Used to optimize parameters.
 
 SCRIPTS=$1
 DATA_DIRECTORY=$2
 ALIGNMENT_DIRECTORY=$3
 REFERENCE=$4
 STRANDEDNESS=$5
-STRICT=$6
+RUN_ID=$6
+#STRICT=$7
 
 cd ${DATA_DIRECTORY}
 mkdir stringtie
+cd stringtie
+mkdir ${RUN_ID}
 
 cd ${ALIGNMENT_DIRECTORY}
 
 for SAMPLE in *.bam; do
 
 	SAMPLE_NAME=`echo ${SAMPLE} | cut -d'_' -f 1`
-
-	if [ ${STRICT} = T ]
-	then
-
-	#qsub -N ${SAMPLE_NAME}_stringtie \
-	#-o ${DATA_DIRECTORY}/stringtie/${SAMPLE_NAME}_stringtie_strict_output.txt \
-	#-e ${DATA_DIRECTORY}/stringtie/${SAMPLE_NAME}_stringtie_strict_output.txt \
-	#${SCRIPTS}/transcriptome_assembly/stringtie_strict.sh \
-	#${DATA_DIRECTORY} ${ALIGNMENT_DIRECTORY} ${REFERENCE} ${SAMPLE} ${SAMPLE_NAME} ${STRANDEDNESS}
-
-	else
-
+	
 	qsub -N ${SAMPLE_NAME}_stringtie \
-        -o ${DATA_DIRECTORY}/stringtie/${SAMPLE_NAME}_stringtie_output.txt \
-        -e ${DATA_DIRECTORY}/stringtie/${SAMPLE_NAME}_stringtie_output.txt \
-        ${SCRIPTS}/transcriptome_assembly/stringtie.sh \
-        ${DATA_DIRECTORY} ${ALIGNMENT_DIRECTORY} ${REFERENCE} ${SAMPLE} ${SAMPLE_NAME} ${STRANDEDNESS}
+                -o ${DATA_DIRECTORY}/stringtie/${RUN_ID}/${SAMPLE_NAME}_stringtie_output.txt \
+                -e ${DATA_DIRECTORY}/stringtie/${RUN_ID}/${SAMPLE_NAME}_stringtie_output.txt \
+                ${SCRIPTS}/transcriptome_assembly/stringtie.sh \
+                ${DATA_DIRECTORY} ${ALIGNMENT_DIRECTORY} ${REFERENCE} ${SAMPLE} ${SAMPLE_NAME} ${STRANDEDNESS} ${RUN_ID}
 
-	fi
+	#if [ ${STRICT} = T ]
+	#then
+
+		#qsub -N ${SAMPLE_NAME}_stringtie \
+		#-o ${DATA_DIRECTORY}/stringtie/${SAMPLE_NAME}_stringtie_strict_output.txt \
+		#-e ${DATA_DIRECTORY}/stringtie/${SAMPLE_NAME}_stringtie_strict_output.txt \
+		#${SCRIPTS}/transcriptome_assembly/stringtie_strict.sh \
+		#${DATA_DIRECTORY} ${ALIGNMENT_DIRECTORY} ${REFERENCE} ${SAMPLE} ${SAMPLE_NAME} ${STRANDEDNESS}
+
+	#else
+	#fi
 
 done
