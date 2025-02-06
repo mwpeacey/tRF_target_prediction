@@ -1,5 +1,5 @@
 # tRF_target_prediction
-Prediction of 22nt 3' tRNA fragment targets in the mouse transcriptome, with a focus on target sites derived from the primer binding site of LTR-retrotransposons. 
+A pipeline for the prediction of 22nt 3' tRNA fragment targets in the mouse transcriptome, with a focus on target sites derived from the primer binding site of LTR-retrotransposons. To this end, the GENCODE annotation is complemented with transcripts assembled with RNA-seq data from the early embryo, when LTR-retrotransposons are released from silencing and tRFs are highly abundant. Target prediction performed with miranda with seed-weighting removed.
 
 Scripts for transcriptome assembly are heavily adapted from Modzelewski et al 2021. Originals are available from https://epigenome.wustl.edu/TE_Transcript_Assembly/tool.html. 
 
