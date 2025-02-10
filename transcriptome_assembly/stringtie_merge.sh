@@ -12,9 +12,10 @@
 ## exonic DNA sequences using a genome fasta as reference.
 
 ## Inputs
-## $1 : directory containing stringtie-generated GTFs to be merged.
-## $2 : reference annotation GTF (e.g. mm10_STAR/gencode.vM23.primary_assembly.annotation.gtf)
-## $3 : reference genome fasta (e.g. mm10_STAR/GRCm38.primary_assembly.genome.fa)
+## $1 : scripts root directory (e.g. /grid/schorn/home/mpeacey/scripts/tRF_target_prediction)
+## $2 : directory containing stringtie-generated GTFs to be merged.
+## $3 : reference annotation GTF (e.g. mm10_STAR/gencode.vM23.primary_assembly.annotation.gtf)
+## $4 : reference genome fasta (e.g. mm10_STAR/GRCm38.primary_assembly.genome.fa)
 
 ## Requirements
 ## Conda environment "stringtie"
@@ -27,9 +28,10 @@ echo "New run started on $(date)"
 echo "Running on samples in {$1}"
 echo "#########################"
 
-STRINGTIE_DIRECTORY=$1
-REFERENCE=$2
-GENOME=$3
+SCRIPTS=$1
+STRINGTIE_DIRECTORY=$2
+REFERENCE=$3
+GENOME_FASTA=$4
 
 echo "Stringtie directory : ${STRINGTIE_DIRECTORY}"
 echo "Reference annotation : ${REFERENCE}"
@@ -74,5 +76,5 @@ gffread -w stringtie_merged_filtered.fa -g ${GENOME_FASTA} stringtie_merged_filt
 
 echo "Finished run on $(date)"
 
-mv /grid/schorn/home/mpeacey/scripts/standard_RNA_seq/stringtie/stringtie_merge_output.txt ${STRINGTIE_DIRECTORY}
+mv ${SCRIPTS}/transcriptome_assembly/stringtie_merge_output.txt ${STRINGTIE_DIRECTORY}
 
