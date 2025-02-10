@@ -94,7 +94,7 @@ for sRNA in $(cat sRNA_list.txt); do
 	-o ${OUTPUT_DIRECTORY}/${RUN_ID}/${RUN_ID}_${sRNA}_miranda_output.txt \
 	-e ${OUTPUT_DIRECTORY}/${RUN_ID}/${RUN_ID}_${sRNA}_miranda_output.txt \
 	${SCRIPTS}/miranda/miranda.sh \
-	${SMALL_RNA_FASTA} ${TRANSCRIPTOME_FASTA} ${RUN_ID} \
+	${TRANSCRIPTOME_FASTA} ${RUN_ID} \
 	${sRNA} ${RUN_MODE} ${OUTPUT_DIRECTORY}
 
 done

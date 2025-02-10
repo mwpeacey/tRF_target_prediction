@@ -1,73 +1,95 @@
 #!/bin/bash
 #$ -cwd
 #$ -pe threads 1
-#$ -l m_mem_free=4G
+#$ -l m_mem_free=32G
 
-# Description: Runs miranda with optimized settings for miRNA or tRF mode.
+## Description
+## Uses miRanda to predict tRF or miRNA targets in an input transcriptome. Designed for use with miranda_wrapper.sh.
 
-# Requirements: miranda
+## Requirements
+## miranda v1.9
 
-# Inputs:
-# $1: FASTA file containing query small RNA sequences
-# $2: FASTA file containing reference sequences to be scanned
-# $3: Run ID
-# $4: Small RNA name (e.g., the miRNA or tRF name)
-# $5: Run mode (miRNA or tRF)
-
-SMALL_RNA_FASTA=$1
-TRANSCRIPTOME_FASTA=$2
-RUN_ID=$3
-sRNA=$4
-RUN_MODE=$5
-OUTPUT_DIRECTORY_ROOT=$6
-
-OUTPUT_DIR="${OUTPUT_DIRECTORY_ROOT}/${RUN_ID}/${sRNA}"
-mkdir -p "$OUTPUT_DIR"
-
-if [[ $# -lt 6 ]]; then
-  echo "Usage: $0 <small_rna_fasta> <transcriptome_fasta> <run_id> <small_rna> <run_mode> <output_directory_root>"
-  exit 1
-fi
+## Inputs
+## $1 : fasta of transcripts to scan.
+## $2 : ID for the run, used as the directory name in the output directory.
+## $3 : sRNA name. Corresponds to one entry in a larger small RNA fasta file.
+## $4 : determines the settings to use for miRanda. "miRNA" runs with standard seed-weighting,
+##      whereas "tRF" runs with seed-weighting removed and the alignment score threshold adjusted
+##      accordingly.
+## $5 : output directory.
 
 echo "New run started on $(date)"
+
+TRANSCRIPTOME_FASTA=$1
+RUN_ID=$2
+sRNA=$3
+RUN_MODE=$4
+OUTPUT_DIRECTORY=$5
+
+echo "Output directory: ${OUTPUT_DIRECTORY}"
+echo "Run ID: ${RUN_ID}"
 echo "Small RNA: ${sRNA}"
 echo "Reference transcriptome: ${TRANSCRIPTOME_FASTA}"
 echo "Run mode: ${RUN_MODE}"
-echo "Output directory: ${OUTPUT_DIRECTORY}/${RUN_ID}"
 
-# Count total number of transcripts for progress tracking
-transcript_number=$(wc -l < "../transcript_list.txt")
+cd ${OUTPUT_DIRECTORY}/${RUN_ID}
+
+echo "Iterating through transcripts..."
+
 transcript_counter=1
+transcript_number=$(echo "$(cat transcript_list.txt)" | wc -l)
 
-# Iterate through each transcript in the list
-while read -r transcript; do
-  echo "Scanning transcript #${transcript_counter} of ${transcript_number}, ID ${transcript}"
+cd ${OUTPUT_DIRECTORY}/${RUN_ID}/${sRNA}
 
-  # Extract the specific transcript sequence and write to a temporary file
-  sed -n "/${transcript}/,/>/p" "$TRANSCRIPTOME_FASTA" | head -n -1 > "temp_${transcript}.fasta"
+for transcript in $(cat ../transcript_list.txt); do
 
-  # Choose miranda parameters based on the run mode
-  if [[ ${RUN_MODE} == 'tRF' ]]; then
-    miranda "$SMALL_RNA_FASTA" "temp_${transcript}.fasta" -out "result_${sRNA}_${transcript}" -sc 75.0 -en -20.0 -scale 1.0 -loose
-  elif [[ ${RUN_MODE} == 'miRNA' ]]; then
-    miranda "$SMALL_RNA_FASTA" "temp_${transcript}.fasta" -out "result_${sRNA}_${transcript}" -sc 120.0
-  else
-    echo "Invalid run mode: ${RUN_MODE}"
-    exit 1
-  fi
+	echo "Scanning transcript #${transcript_counter} of ${transcript_number}, ID ${transcript}"
 
-  # Collect summary information if there are hits
-  if grep -q "Scores for this hit:" "result_${sRNA}_${transcript}"; then
-    grep -A 1 "Scores for this hit:" "result_${sRNA}_${transcript}" | grep '>' >> "${sRNA}_summary"
-  fi
+	## Move the target transcript to a temporary fasta file
 
-  # Remove result file if no hits are found
-  grep -q "No Hits Found above Threshold" "result_${sRNA}_${transcript}" && rm -f "result_${sRNA}_${transcript}"
+        cat ${TRANSCRIPTOME_FASTA} | sed -n "/${transcript}/,/>/p" | head -n -1 > temp_${transcript}.fasta
 
-  # Clean up the temporary transcript file
-  rm -f "temp_${transcript}.fasta"
+	## Run miranda using that temporary file
 
-  ((transcript_counter++))
-done < "../transcript_list.txt"
+	if [ ${RUN_MODE} == 'tRF' ]; then
+
+		miranda temp_${sRNA}.fasta temp_${transcript}.fasta -out result_${sRNA}_${transcript} -sc 75.0 -en -20.0 -scale 1.0 -loose
+
+	fi
+
+	if [ ${RUN_MODE} == 'miRNA' ]; then
+
+		miranda temp_${sRNA}.fasta temp_${transcript}.fasta -out result_${sRNA}_${transcript} -sc 120.0
+
+	fi
+
+	rm temp_${transcript}.fasta
+
+	## If hits, move the summary line to a summary file
+
+	grep -A 1 "Scores for this hit:" result_${sRNA}_${transcript} | sort | grep '>' > temp_summary_${transcript_counter}
+
+	if [ $transcript_counter = 1 ]; then
+
+	               	mv temp_summary_1 ${sRNA}_summary
+
+	        else
+
+	            	cat temp_summary_$transcript_counter >> ${sRNA}_summary
+
+	        fi
+
+	rm temp_summary_${transcript_counter}
+
+	## Remove result file if no hits
+
+	grep -l "No Hits Found above Threshold" result_${sRNA}_${transcript} | xargs -r rm -f
+
+	((transcript_counter=transcript_counter+1))
+
+done
+
+rm temp_${sRNA}.fasta
 
 echo "Finished on $(date)."
+
