@@ -19,20 +19,21 @@ TRANSCRIPTOME_FASTA=$2
 RUN_ID=$3
 sRNA=$4
 RUN_MODE=$5
+OUTPUT_DIRECTORY_ROOT=$6
 
-OUTPUT_DIR="/grid/schorn/home/mpeacey/tRF_targets/data/miranda_output/${RUN_ID}/${sRNA}"
+OUTPUT_DIR="${OUTPUT_DIRECTORY_ROOT}/${RUN_ID}/${sRNA}"
 mkdir -p "$OUTPUT_DIR"
 
-if [[ $# -lt 5 ]]; then
-  echo "Usage: $0 <small_rna_fasta> <transcriptome_fasta> <run_id> <small_rna> <run_mode>"
+if [[ $# -lt 6 ]]; then
+  echo "Usage: $0 <small_rna_fasta> <transcriptome_fasta> <run_id> <small_rna> <run_mode> <output_directory_root>"
   exit 1
 fi
 
 echo "New run started on $(date)"
-echo "Run ID: ${RUN_ID}"
 echo "Small RNA: ${sRNA}"
 echo "Reference transcriptome: ${TRANSCRIPTOME_FASTA}"
 echo "Run mode: ${RUN_MODE}"
+echo "Output directory: ${OUTPUT_DIRECTORY}/${RUN_ID}"
 
 # Count total number of transcripts for progress tracking
 transcript_number=$(wc -l < "../transcript_list.txt")

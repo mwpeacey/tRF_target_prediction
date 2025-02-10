@@ -91,10 +91,10 @@ for sRNA in $(cat sRNA_list.txt); do
 	cat ${SMALL_RNA_FASTA} | sed -n "/${sRNA}/,/>/p" | head -2 > temp_${sRNA}.fasta
 
 	qsub -N ${RUN_ID}_${sRNA}_miranda \
-	-o ${OUTPUT_DIRECTORY}/${RUN_ID}_${sRNA}_miranda_output.txt \
-	-e ${OUTPUT_DIRECTORY}/${RUN_ID}_${sRNA}_miranda_output.txt \
-	${SCRIPTS}/miranda/miranda_new.sh \
+	-o ${OUTPUT_DIRECTORY}/${RUN_ID}/${RUN_ID}_${sRNA}_miranda_output.txt \
+	-e ${OUTPUT_DIRECTORY}/${RUN_ID}/${RUN_ID}_${sRNA}_miranda_output.txt \
+	${SCRIPTS}/miranda/miranda.sh \
 	${SMALL_RNA_FASTA} ${TRANSCRIPTOME_FASTA} ${RUN_ID} \
-	${sRNA} ${RUN_MODE}
+	${sRNA} ${RUN_MODE} ${OUTPUT_DIRECTORY}
 
 done
