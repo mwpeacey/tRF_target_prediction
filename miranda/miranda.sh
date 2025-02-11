@@ -1,7 +1,7 @@
 #!/bin/bash
 #$ -cwd
 #$ -pe threads 1
-#$ -l m_mem_free=32G
+#$ -l m_mem_free=4G
 
 ## Description
 ## Uses miRanda to predict tRF or miRNA targets in an input transcriptome. Designed for use with miranda_wrapper.sh.
