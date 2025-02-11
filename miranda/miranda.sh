@@ -54,7 +54,7 @@ for transcript in $(cat ../transcript_list.txt); do
 	if [ ${RUN_MODE} == 'tRF' ]; then
 
 		miranda temp_${sRNA}.fasta \
-			${OUTPUT_DIRECTORY}/${RUN_ID}/split_transcripts/${transcript}.fasta \
+			${OUTPUT_DIRECTORY}/${RUN_ID}/split_transcripts/${transcript}.fa \
 			-out result_${sRNA}_${transcript} \
 			-sc 75.0 -en -20.0 -scale 1.0 -loose
 
@@ -63,7 +63,7 @@ for transcript in $(cat ../transcript_list.txt); do
 	if [ ${RUN_MODE} == 'miRNA' ]; then
 
 		miranda temp_${sRNA}.fasta \
-                        ${OUTPUT_DIRECTORY}/${RUN_ID}/split_transcripts/${transcript}.fasta \
+                        ${OUTPUT_DIRECTORY}/${RUN_ID}/split_transcripts/${transcript}.fa \
                         -out result_${sRNA}_${transcript} \
                         -sc 120
 
