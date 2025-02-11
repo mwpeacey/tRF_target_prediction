@@ -79,6 +79,13 @@ done
 
 rm temp_lines.txt
 
+## Split transcripts
+
+if [ ! -d "split_transcripts" ]; then
+    mkdir split_transcripts
+    awk '/^>/ {if (seq) print seq > filename; filename="split_transcripts/" substr($0,2) ".fa"; seq=""} {if (!/^>/) seq=seq $0} END {if (seq) print seq > filename}' ${TRANSCRIPTOME_FASTA}
+fi
+
 for sRNA in $(cat sRNA_list.txt); do
 
 	cd ${OUTPUT_DIRECTORY}/${RUN_ID}

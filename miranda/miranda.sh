@@ -47,23 +47,29 @@ for transcript in $(cat ../transcript_list.txt); do
 
 	## Move the target transcript to a temporary fasta file
 
-        cat ${TRANSCRIPTOME_FASTA} | sed -n "/${transcript}/,/>/p" | head -n -1 > temp_${transcript}.fasta
+        ##cat ${TRANSCRIPTOME_FASTA} | sed -n "/${transcript}/,/>/p" | head -n -1 > temp_${transcript}.fasta
 
 	## Run miranda using that temporary file
 
 	if [ ${RUN_MODE} == 'tRF' ]; then
 
-		miranda temp_${sRNA}.fasta temp_${transcript}.fasta -out result_${sRNA}_${transcript} -sc 75.0 -en -20.0 -scale 1.0 -loose
+		miranda temp_${sRNA}.fasta \
+			${OUTPUT_DIRECTORY}/${RUN_ID}/split_transcripts/${transcript}.fasta \
+			-out result_${sRNA}_${transcript} \
+			-sc 75.0 -en -20.0 -scale 1.0 -loose
 
 	fi
 
 	if [ ${RUN_MODE} == 'miRNA' ]; then
 
-		miranda temp_${sRNA}.fasta temp_${transcript}.fasta -out result_${sRNA}_${transcript} -sc 120.0
+		miranda temp_${sRNA}.fasta \
+                        ${OUTPUT_DIRECTORY}/${RUN_ID}/split_transcripts/${transcript}.fasta \
+                        -out result_${sRNA}_${transcript} \
+                        -sc 120
 
 	fi
 
-	rm temp_${transcript}.fasta
+	# rm temp_${transcript}.fasta
 
 	## If hits, move the summary line to a summary file
 
