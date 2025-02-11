@@ -15,7 +15,7 @@
 ## Inputs
 ## $1 : scripts root directory (e.g. /grid/schorn/home/mpeacey/scripts/tRF_target_prediction)
 ## $2 : fasta of small RNAs (e.g. tRF3b sequences).
-## $3 : fasta of transcripts to scan.
+## $3 : directory containing fasta files, each of which represents a transcript to scan.
 ## $4 : output directory.
 ## $5 : ID for the run, used as the directory name in the output directory.
 ## $6 : determines the settings to use for miRanda. "miRNA" runs with standard seed-weighting,
@@ -24,7 +24,7 @@
 
 SCRIPTS=$1
 SMALL_RNA_FASTA=$2
-TRANSCRIPTOME_FASTA=$3
+TRANSCRIPT_DIRECTORY=$3
 OUTPUT_DIRECTORY=$4
 RUN_ID=$5
 RUN_MODE=$6
@@ -56,35 +56,28 @@ done
 
 rm temp_sRNA_list.txt
 
-cat ${TRANSCRIPTOME_FASTA} | grep '>' > temp_lines.txt
+#cat ${TRANSCRIPTOME_FASTA} | grep '>' > temp_lines.txt
 
-i=1
-for line in $(cat temp_lines.txt); do
+#i=1
+#for line in $(cat temp_lines.txt); do
 
-        result=${line#*>}
+#        result=${line#*>}
 
-        if [ $i = 1 ]; then
+        #if [ $i = 1 ]; then
 
-               	echo $result > transcript_list.txt
+         #      	echo $result > transcript_list.txt
 
-        else
+        #else
 
-            	echo $result >> transcript_list.txt
+         #   	echo $result >> transcript_list.txt
 
-        fi
+        #fi
 
-        ((i=i+1))
+        #((i=i+1))
 
-done
+#done
 
-rm temp_lines.txt
-
-## Split transcripts
-
-if [ ! -d "split_transcripts" ]; then
-    mkdir split_transcripts
-    awk '/^>/ {if (seq) print seq > filename; filename="split_transcripts/" substr($0,2) ".fa"; seq=""} {if (!/^>/) seq=seq $0} END {if (seq) print seq > filename}' ${TRANSCRIPTOME_FASTA}
-fi
+#rm temp_lines.txt
 
 for sRNA in $(cat sRNA_list.txt); do
 
@@ -101,7 +94,7 @@ for sRNA in $(cat sRNA_list.txt); do
 	-o ${OUTPUT_DIRECTORY}/${RUN_ID}/${RUN_ID}_${sRNA}_miranda_output.txt \
 	-e ${OUTPUT_DIRECTORY}/${RUN_ID}/${RUN_ID}_${sRNA}_miranda_output.txt \
 	${SCRIPTS}/miranda/miranda.sh \
-	${TRANSCRIPTOME_FASTA} ${RUN_ID} \
+	${TRANSCRIPT_DIRECTORY} ${RUN_ID} \
 	${sRNA} ${RUN_MODE} ${OUTPUT_DIRECTORY}
 
 done
