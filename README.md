@@ -18,11 +18,10 @@ Except for one-off tasks such as index generation and tRF sequence extraction, i
 
 ## ORF prediction
 
-1.
-2.
+1. Find open reading frames in the stringtie-assembled transcriptome from step 1.8 with "ORF_prediction/find_orfs.sh".
+2. Blast predicted open reading frames against the Refseq annotation with "ORF_prediction/blast_orfs.sh". Retains only the top scoring hit.
 
 ## tRF target prediction
 
-1. Generate a fasta of tRF3b sequences from mature tRNA sequenes from GtRNAdb (https://gtrnadb.ucsc.edu) with "miranda/generate_tRF_fasta.R".
+1. Generate a fasta of tRF3b sequences from mature tRNA sequences from GtRNAdb (https://gtrnadb.ucsc.edu) with "miranda/generate_tRF_fasta.R".
 2. Run miRanda with either default miRNA or custom tRF parameters with "wrappers/miranda_wrapper.sh". Requires transcriptome input from step 1.8 and tRF input from step 3.1. Note this takes a long time given the size of the transcriptome (100,000 transcripts +).
-
