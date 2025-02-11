@@ -8,19 +8,16 @@
 
 ## Description
 ## Merges a set of stringtie-generated GTFs together with a reference GTF,
-## filters out transcripts without strand information, and extracts
-## exonic DNA sequences using a genome fasta as reference.
+## and filters out transcripts without strand information.
 
 ## Inputs
 ## $1 : scripts root directory (e.g. /grid/schorn/home/mpeacey/scripts/tRF_target_prediction)
 ## $2 : directory containing stringtie-generated GTFs to be merged.
 ## $3 : reference annotation GTF (e.g. mm10_STAR/gencode.vM23.primary_assembly.annotation.gtf)
-## $4 : reference genome fasta (e.g. mm10_STAR/GRCm38.primary_assembly.genome.fa)
 
 ## Requirements
 ## Conda environment "stringtie"
 ## stringtie 3.0.0
-## gffread 0.12.7
 ## gffcompare 0.12.6
 
 echo "#########################"
@@ -31,11 +28,9 @@ echo "#########################"
 SCRIPTS=$1
 STRINGTIE_DIRECTORY=$2
 REFERENCE=$3
-GENOME_FASTA=$4
 
 echo "Stringtie directory : ${STRINGTIE_DIRECTORY}"
 echo "Reference annotation : ${REFERENCE}"
-echo "Genome fasta  file : ${GENOME}"
 
 cd ${STRINGTIE_DIRECTORY}
 
@@ -69,10 +64,6 @@ awk -F "\t" '$7 != "." { print}' stringtie_merged.gtf > stringtie_merged_filtere
 # Generates statistics about novel transcript variants
 echo "Generating statistics..."
 gffcompare -R -r ${REFERENCE} -o merged stringtie_merged_filtered.gtf
-
-# Extracts exonic DNA sequences form the resulting GTF file.
-echo "Extracting fasta..."
-gffread -w stringtie_merged_filtered.fa -g ${GENOME_FASTA} stringtie_merged_filtered.gtf
 
 echo "Finished run on $(date)"
 

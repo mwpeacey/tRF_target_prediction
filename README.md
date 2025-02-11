@@ -3,7 +3,7 @@ A pipeline for the prediction of 22nt 3' tRNA fragment targets in the mouse tran
 
 Scripts for transcriptome assembly are adapted from Modzelewski et al 2021 (https://epigenome.wustl.edu/TE_Transcript_Assembly/tool.html). Scripts for SMART-seq+5' read processing are adapted from Oomen et al. 2025 (https://github.com/meoomen/Smartseq5).
 
-Except for one-off tasks such as index generation, individual scripts should be executed with the corresponding wrapper under "wrappers". Editing may be necessary for compatibility with your HPC.
+Except for one-off tasks such as index generation and tRF sequence extraction, individual scripts should be executed with the corresponding wrapper under "wrappers". Editing may be necessary for compatibility with your HPC.
 
 ## Transcriptome assembly
 
@@ -13,8 +13,10 @@ Except for one-off tasks such as index generation, individual scripts should be 
 4. Update the STAR index with new splice junctions with "transcriptome_assembly/generate_STAR_index_second_pass.sh". This requires gathering all SJ.out.tab files from the first alignment into a single directory.
 5. Second pass alignment with "wrappers/STAR_wrapper.sh", using the updated STAR index from step 4.
 6. Stringtie assembly with "wrappers/stringtie_wrapper.sh". Strandedness must be determined manually (e.g. with "check_strandedness", https://github.com/signalbash/how_are_we_stranded_here)
-7. Merge stringtie assembly into a single GTF file, filter for strand information, and extract transcripts as a fasta file  with "transcriptome_assembly/stringtie_merge.sh"). This requires moving all .gtf files from step 6 into a single directory. 
-8. Run miRanda with either default miRNA or custom tRF parameters with wrappers/miranda_wrapper.sh.
+7. Merge stringtie assembly into a single GTF file and filter for strand information with "transcriptome_assembly/stringtie_merge.sh". This requires moving all .gtf files from step 6 into a single directory. 
+8. Extract fasta sequences from the transcriptome GTF generated in step 7 with "transcriptome_assembly/gtf_to_fasta.sh". Individual transcripts are split into separate fasta files for faster miRanda processing.
+9. Generate a fasta of tRF3b sequences from mature tRNA sequenes from GtRNAdb with "miranda/generate_tRF_fasta.R".
+10. Run miRanda with either default miRNA or custom tRF parameters with "wrappers/miranda_wrapper.sh". Requires transcriptome input from step 8 and tRF input from step 9. Note this takes a long time given the size of the transcriptome (100,000 transcripts +). 
 
 ## ORF prediction
 
