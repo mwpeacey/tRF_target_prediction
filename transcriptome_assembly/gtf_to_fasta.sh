@@ -38,6 +38,7 @@ echo "Extracting fasta..."
 gffread -w stringtie_merged_filtered.fa -g ${GENOME_FASTA} stringtie_merged_filtered.gtf
 
 # Splits the transcriptome multi-fasta into individual fasta files for faster miRanda processing.
+echo "Splitting transcripts..."
 mkdir split_transcripts
 awk '/^>/ {if (seq) print seq > filename; filename="split_transcripts/" substr($0,2) ".fa"; seq=""} {if (!/^>/) seq=seq $0} END {if (seq) print seq > filename}' stringtie_merged_filtered.fa
 
