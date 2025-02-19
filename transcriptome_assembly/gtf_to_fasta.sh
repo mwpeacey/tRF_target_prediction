@@ -8,7 +8,7 @@
 
 ## Description
 ## Extracts exonic transcript sequences from a GTF file using a genome fasta as reference.
-## The resulting multi-fasta is split into individiual fasta files for fasta miRanda processing.
+## The resulting multi-fasta is split into individual fasta files for faster miRanda processing.
 
 ## Inputs
 ## $1 : scripts root directory (e.g. /grid/schorn/home/mpeacey/scripts/tRF_target_prediction)
@@ -33,34 +33,34 @@ echo "Genome fasta  file : ${GENOME_FASTA}"
 
 cd ${STRINGTIE_DIRECTORY}
 
-# Extracts exonic DNA sequences form the GTF file.
+# Extracts exonic DNA sequences from the GTF file.
 echo "Extracting fasta..."
 gffread -w stringtie_merged_filtered.fa -g ${GENOME_FASTA} stringtie_merged_filtered.gtf
 
-# Splits the transcriptome multi-fasta into individual fasta files for faster miRanda processing.
+# Split transcripts for faster miranda processing
 echo "Splitting transcripts..."
-mkdir -p split_transcripts
-awk '
-    /^>/ {
-        if (seq) { 
-            print header > filename;
-            print seq > filename;
-        }
-        transcript_id = substr($0, 2);  # Remove '>'
-        filename = "split_transcripts/" transcript_id ".fa";
-        header = ">" transcript_id;
-        seq = "";
-    }
-    !/^>/ {
-        seq = seq $0;
-    }
-    END {
-        if (seq) { 
-            print header > filename;
-            print seq > filename;
-        }
-    }
-' stringtie_merged_filtered.fa
+mkdir split_transcripts
+
+# Input FASTA file
+input_fasta="stringtie_merged_filtered.fa"
+
+# Initialize variables
+output_file=""
+while IFS= read -r line; do
+    if [[ $line == ">"* ]]; then
+        # Extract transcript name (remove '>' and take only the first word)
+        transcript_name=$(echo "$line" | cut -d ' ' -f1 | tr -d '>')
+
+        # Define new output file
+        output_file="split_transcripts/${transcript_name}.fasta"
+
+        # Write the header line to the new file
+        echo "$line" > "$output_file"
+    else
+        # Append sequence data to the current output file
+        echo "$line" >> "$output_file"
+    fi
+done < "$input_fasta"
 
 echo "Finished run on $(date)"
 
