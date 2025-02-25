@@ -1,7 +1,7 @@
 #!/bin/bash
 #$ -cwd
 #$ -pe threads 1
-#$ -l m_mem_free=4G
+#$ -l m_mem_free=8G
 
 ## Description
 ## Uses miRanda to predict tRF or miRNA targets in an input transcriptome. Designed for use with miranda_wrapper.sh.
@@ -39,7 +39,7 @@ echo "Iterating through transcripts..."
 transcript_counter=1
 transcript_number=$(ls -1 | wc -l)
 
-for transcript in *.fa; do
+for transcript in *.fasta; do
 	
 	TRANSCRIPT_NAME=`echo ${transcript} | cut -d'.' -f 1`
 
