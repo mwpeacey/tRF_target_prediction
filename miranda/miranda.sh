@@ -41,7 +41,7 @@ transcript_number=$(ls -1 | wc -l)
 
 for transcript in *.fasta; do
 	
-	TRANSCRIPT_NAME=`echo ${transcript} | cut -d'.' -f 1`
+	TRANSCRIPT_NAME="${transcript%.fasta}"
 
 	echo "Scanning transcript #${transcript_counter} of ${transcript_number}, ID ${TRANSCRIPT_NAME}"
 
