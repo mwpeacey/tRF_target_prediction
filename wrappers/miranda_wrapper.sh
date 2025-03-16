@@ -69,7 +69,7 @@ for sRNA in $(cat sRNA_list.txt); do
 
 	qsub -N ${RUN_ID}_${sRNA}_miranda \
 	-o ${OUTPUT_DIRECTORY}/${RUN_ID}/${RUN_ID}_${sRNA}_miranda_output.txt \
-	-e ${OUTPUT_DIRECTORY}/${RUN_ID}/${RUN_ID}_${sRNA}_miranda_output.txt \
+	-j oe \
 	${SCRIPTS}/miranda/miranda.sh \
 	${TRANSCRIPT_DIRECTORY} ${RUN_ID} \
 	${sRNA} ${RUN_MODE} ${OUTPUT_DIRECTORY}
