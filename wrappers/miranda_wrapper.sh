@@ -56,29 +56,6 @@ done
 
 rm temp_sRNA_list.txt
 
-#cat ${TRANSCRIPTOME_FASTA} | grep '>' > temp_lines.txt
-
-#i=1
-#for line in $(cat temp_lines.txt); do
-
-#        result=${line#*>}
-
-        #if [ $i = 1 ]; then
-
-         #      	echo $result > transcript_list.txt
-
-        #else
-
-         #   	echo $result >> transcript_list.txt
-
-        #fi
-
-        #((i=i+1))
-
-#done
-
-#rm temp_lines.txt
-
 for sRNA in $(cat sRNA_list.txt); do
 
 	cd ${OUTPUT_DIRECTORY}/${RUN_ID}
