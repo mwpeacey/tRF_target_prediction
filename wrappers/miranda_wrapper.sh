@@ -21,6 +21,7 @@
 ## $6 : determines the settings to use for miRanda. "miRNA" runs with standard seed-weighting,
 ##      whereas "tRF" runs with seed-weighting removed and the alignment score threshold adjusted
 ##      accordingly.
+## $T : T or F. If T, will continue a previous run from where it left off/failed.
 
 SCRIPTS=$1
 SMALL_RNA_FASTA=$2
@@ -28,31 +29,36 @@ TRANSCRIPT_DIRECTORY=$3
 OUTPUT_DIRECTORY=$4
 RUN_ID=$5
 RUN_MODE=$6
+RERUN=$7
 
 cd ${OUTPUT_DIRECTORY}
-mkdir ${RUN_ID}
+mkdir -p ${RUN_ID}
 cd ${RUN_ID}
 
-cat ${SMALL_RNA_FASTA} | grep '>' > temp_sRNA_list.txt
+if  [[ ! -f sRNA_list.txt ]]; then
 
-i=1
-for line in $(cat temp_sRNA_list.txt); do
+	cat ${SMALL_RNA_FASTA} | grep '>' > temp_sRNA_list.txt
 
-        result=${line#*>}
+	i=1
+	for line in $(cat temp_sRNA_list.txt); do
 
-        if [ $i = 1 ]; then
+        	result=${line#*>}
 
-                echo $result > sRNA_list.txt
+        	if [ $i = 1 ]; then
 
-        else
+                	echo $result > sRNA_list.txt
 
-            	echo $result >> sRNA_list.txt
+        	else
 
-        fi
+            		echo $result >> sRNA_list.txt
 
-	((i=i+1))
+        	fi
 
-done
+		((i=i+1))
+
+	done
+
+fi
 
 rm temp_sRNA_list.txt
 
@@ -72,6 +78,6 @@ for sRNA in $(cat sRNA_list.txt); do
 	-j oe \
 	${SCRIPTS}/miranda/miranda.sh \
 	${TRANSCRIPT_DIRECTORY} ${RUN_ID} \
-	${sRNA} ${RUN_MODE} ${OUTPUT_DIRECTORY}
+	${sRNA} ${RUN_MODE} ${OUTPUT_DIRECTORY} ${RERUN}
 
 done

@@ -17,6 +17,7 @@
 ##      whereas "tRF" runs with seed-weighting removed and the alignment score threshold adjusted
 ##      accordingly.
 ## $5 : output directory.
+## $6 : T or F. If T, will continue a previous run from where it left off/failed.
 
 echo "New run started on $(date)"
 
@@ -25,6 +26,7 @@ RUN_ID=$2
 sRNA=$3
 RUN_MODE=$4
 OUTPUT_DIRECTORY=$5
+RERUN=$6
 
 echo "Output directory: ${OUTPUT_DIRECTORY}"
 echo "Transcriptome directory: ${TRANSCRIPTOME_DIRECTORY}"
@@ -34,17 +36,17 @@ echo "Run mode: ${RUN_MODE}"
 
 cd ${OUTPUT_DIRECTORY}/${RUN_ID}
 
-if [[ -f mouse_tRF3b_v2_${sRNA}_miranda_output.txt ]]; then
+if [ ${RERUN} == 'T' ]; then
 
-	echo "Output file found. Checking if finished..."
+	echo "Re-run: T"
 
 	if grep -q "Finished" mouse_tRF3b_v2_${sRNA}_miranda_output.txt; then
 
-        	echo "Already finished. Exiting..."
+        	echo "Run already finished. Exiting..."
 
 	else
 
-    		echo "Not finished. Iterating through transcripts..."
+    		echo "Run not finished. Iterating through transcripts..."
 
         	cd ${TRANSCRIPTOME_DIRECTORY}
 
@@ -114,7 +116,7 @@ if [[ -f mouse_tRF3b_v2_${sRNA}_miranda_output.txt ]]; then
 
 else
 
-	echo "No previous output found. Starting from scratch..."
+	echo "Re-run: F"
 
 	cd ${TRANSCRIPTOME_DIRECTORY}
 
