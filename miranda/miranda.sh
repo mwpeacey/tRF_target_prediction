@@ -89,14 +89,14 @@ if [[ -f mouse_tRF3b_v2_${sRNA}_miranda_output.txt ]]; then
 
                 		grep -A 1 "Scores for this hit:" result_${sRNA}_${TRANSCRIPT_NAME} | sort | grep '>' > temp_summary_${transcript_counter}
 
-                		if [ $transcript_counter = 1 ]; then
+                		if  [[ -f ${sRNA}_summary ]]; then
 
-                        		mv temp_summary_1 ${sRNA}_summary
+					cat temp_summary_${transcript_counter} >> ${sRNA}_summary
+                                        rm temp_summary_${transcript_counter}
 
-                		else
+				else
 
-                    			cat temp_summary_${transcript_counter} >> ${sRNA}_summary
-                        		rm temp_summary_${transcript_counter}
+                        		mv temp_summary_${transcript_counter} ${sRNA}_summary
 
                 		fi
 
@@ -152,16 +152,16 @@ else
 
 		grep -A 1 "Scores for this hit:" result_${sRNA}_${TRANSCRIPT_NAME} | sort | grep '>' > temp_summary_${transcript_counter}
 
-		if [ $transcript_counter = 1 ]; then
+		if  [[ -f ${sRNA}_summary ]]; then
 
-	               	mv temp_summary_1 ${sRNA}_summary
+                	cat temp_summary_${transcript_counter} >> ${sRNA}_summary
+                        rm temp_summary_${transcript_counter}
 
-	        else
+                else
 
-	            	cat temp_summary_${transcript_counter} >> ${sRNA}_summary
-			rm temp_summary_${transcript_counter}
+                        mv temp_summary_${transcript_counter} ${sRNA}_summary
 
-	        fi
+                fi
 
 		## Remove result file if no hits
 
