@@ -21,7 +21,10 @@
 ## $6 : determines the settings to use for miRanda. "miRNA" runs with standard seed-weighting,
 ##      whereas "tRF" runs with seed-weighting removed and the alignment score threshold adjusted
 ##      accordingly.
-## $T : T or F. If T, will continue a previous run from where it left off/failed.
+## $7 : T or F. If T, will continue a previous run from where it left off/failed.
+## $8 : "T" or "F". If T, will continue a previous run from where it left off/failed. To re-run, copy
+##	the results of the previous run itno a new directory named after the run ID matching $2.
+##	Specifiy the name of the previous run with $7.
 
 SCRIPTS=$1
 SMALL_RNA_FASTA=$2
@@ -30,6 +33,7 @@ OUTPUT_DIRECTORY=$4
 RUN_ID=$5
 RUN_MODE=$6
 RERUN=$7
+PREVIOUS_RUN=$8
 
 cd ${OUTPUT_DIRECTORY}
 mkdir -p ${RUN_ID}
@@ -68,16 +72,16 @@ for sRNA in $(cat sRNA_list.txt); do
 
 	echo "Submitting job for sRNA ${sRNA}..."
 
-	mkdir ${sRNA}
+	mkdir -p ${sRNA}
 	cd ${sRNA}
 
 	cat ${SMALL_RNA_FASTA} | sed -n "/${sRNA}/,/>/p" | head -2 > temp_${sRNA}.fasta
 
 	qsub -N ${RUN_ID}_${sRNA}_miranda \
 	-o ${OUTPUT_DIRECTORY}/${RUN_ID}/${RUN_ID}_${sRNA}_miranda_output.txt \
-	-j oe \
+	-e ${OUTPUT_DIRECTORY}/${RUN_ID}/${RUN_ID}_${sRNA}_miranda_output.txt \
 	${SCRIPTS}/miranda/miranda.sh \
 	${TRANSCRIPT_DIRECTORY} ${RUN_ID} \
-	${sRNA} ${RUN_MODE} ${OUTPUT_DIRECTORY} ${RERUN}
+	${sRNA} ${RUN_MODE} ${OUTPUT_DIRECTORY} ${RERUN} ${PREVIOUS_RUN}
 
 done

@@ -17,7 +17,10 @@
 ##      whereas "tRF" runs with seed-weighting removed and the alignment score threshold adjusted
 ##      accordingly.
 ## $5 : output directory.
-## $6 : T or F. If T, will continue a previous run from where it left off/failed.
+## $6 : "T" or "F". If T, will continue a previous run from where it left off/failed. To re-run, copy
+##	the results of the previous run itno a new directory named after the run ID matching $2.
+##	Specifiy the name of the previous run with $7.
+## $7 : Previous/failed run ID, if $6=T.
 
 echo "New run started on $(date)"
 
@@ -27,6 +30,7 @@ sRNA=$3
 RUN_MODE=$4
 OUTPUT_DIRECTORY=$5
 RERUN=$6
+PREVIOUS_RUN=$7
 
 echo "Output directory: ${OUTPUT_DIRECTORY}"
 echo "Transcriptome directory: ${TRANSCRIPTOME_DIRECTORY}"
@@ -39,8 +43,9 @@ cd ${OUTPUT_DIRECTORY}/${RUN_ID}
 if [ ${RERUN} == 'T' ]; then
 
 	echo "Re-run: T"
+	echo "Previous run ID: ${PREVIOUS_RUN}"
 
-	if grep -q "Finished" mouse_tRF3b_v2_${sRNA}_miranda_output.txt; then
+	if grep -q "Finished" ${PREVIOUS_RUN}_${sRNA}_miranda_output.txt; then
 
         	echo "Run already finished. Exiting..."
 
@@ -57,7 +62,9 @@ if [ ${RERUN} == 'T' ]; then
 
                 	TRANSCRIPT_NAME="${transcript%.fasta}"
 
-                	if grep -q ${TRANSCRIPT_NAME} mouse_tRF3b_v2_${sRNA}_miranda_output.txt; then
+			cd ${OUTPUT_DIRECTORY}/${RUN_ID}
+
+                	if grep -q ${TRANSCRIPT_NAME} ${PREVIOUS_RUN}_${sRNA}_miranda_output.txt; then
 
                         	echo "${TRANSCRIPT_NAME} finished, skipping..."
 
@@ -65,7 +72,7 @@ if [ ${RERUN} == 'T' ]; then
 
 				echo "Scanning transcript #${transcript_counter} of ${transcript_number}, ID ${TRANSCRIPT_NAME}"
 
-                		## Run miranda using that temporary file
+                		## Run miranda in miRNA or tRF mode
 
                 		cd ${OUTPUT_DIRECTORY}/${RUN_ID}/${sRNA}
 
