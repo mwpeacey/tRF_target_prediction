@@ -66,7 +66,7 @@ if [ ${RERUN} == 'T' ]; then
 
                 	if grep -q ${TRANSCRIPT_NAME} ${PREVIOUS_RUN}_${sRNA}_miranda_output.txt; then
 
-                        	echo "${TRANSCRIPT_NAME} finished, skipping..."
+                        	echo "Transcript #${transcript_counter} of ${transcript_number}, ID ${TRANSCRIPT_NAME} finished, skipping..."
 
                 	else
 
