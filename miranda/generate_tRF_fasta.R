@@ -6,7 +6,8 @@ library(glue)
 library(stringr)
 library(tidyverse)
 
-genome = 'mm10'
+#genome = 'mm10'
+genome = 'hg38'
 
 tRNA_fasta = Biostrings::readRNAStringSet(glue("import/{genome}-mature-tRNAs.fa"),
                                      format = 'fasta')
