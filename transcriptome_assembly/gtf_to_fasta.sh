@@ -25,24 +25,26 @@ echo "Running on samples in {$1}"
 echo "#########################"
 
 SCRIPTS=$1
-STRINGTIE_DIRECTORY=$2
-GENOME_FASTA=$3
+OUTPUT_DIRECTORY=$2
+GTF=$3
+GENOME_FASTA=$4
 
-echo "Stringtie directory : ${STRINGTIE_DIRECTORY}"
+echo "Output directory : ${STRINGTIE_DIRECTORY}"
+echo "GTF to convert : ${GTF}"
 echo "Genome fasta  file : ${GENOME_FASTA}"
 
-cd ${STRINGTIE_DIRECTORY}
+cd ${OUTPUT_DIRECTORY}
 
 # Extracts exonic DNA sequences from the GTF file.
 echo "Extracting fasta..."
-gffread -w stringtie_merged_filtered.fa -g ${GENOME_FASTA} stringtie_merged_filtered.gtf
+gffread -w ${GTF}.fa -g ${GENOME_FASTA} ${GTF}.gtf
 
 # Split transcripts for faster miranda processing
 echo "Splitting transcripts..."
 mkdir split_transcripts
 
 # Input FASTA file
-input_fasta="stringtie_merged_filtered.fa"
+input_fasta="${GTF}.fa"
 
 # Initialize variables
 output_file=""
@@ -64,5 +66,5 @@ done < "$input_fasta"
 
 echo "Finished run on $(date)"
 
-mv ${SCRIPTS}/transcriptome_assembly/gtf_to_fasta_output.txt ${STRINGTIE_DIRECTORY}
+mv ${SCRIPTS}/transcriptome_assembly/gtf_to_fasta_output.txt ${OUTPUT_DIRECTORY}
 
