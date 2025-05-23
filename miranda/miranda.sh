@@ -81,7 +81,7 @@ if [ ${RERUN} == 'T' ]; then
                         		miranda temp_${sRNA}.fasta \
                                 		${TRANSCRIPTOME_DIRECTORY}/${transcript} \
                                 		-out result_${sRNA}_${TRANSCRIPT_NAME} \
-                                		-sc 75.0 -en -20.0 -scale 1.0 -loose
+                                		-sc 70.0 -en -20.0 -scale 1.0 -loose
 
                 		fi
 
@@ -90,7 +90,7 @@ if [ ${RERUN} == 'T' ]; then
                         		miranda temp_${sRNA}.fasta \
                                 		${TRANSCRIPTOME_DIRECTORY}/${transcript} \
                                 		-out result_${sRNA}_${TRANSCRIPT_NAME} \
-                                	-sc 120
+                                	-sc 150
 
                 		fi
 
@@ -145,7 +145,7 @@ else
 			miranda temp_${sRNA}.fasta \
 				${TRANSCRIPTOME_DIRECTORY}/${transcript} \
 				-out result_${sRNA}_${TRANSCRIPT_NAME} \
-				-sc 75.0 -en -20.0 -scale 1.0 -loose
+				-sc 70.0 -en -20.0 -scale 1.0 -loose
 
 		fi
 
@@ -154,7 +154,7 @@ else
                 	miranda temp_${sRNA}.fasta \
                         	${TRANSCRIPTOME_DIRECTORY}/${transcript} \
                         	-out result_${sRNA}_${TRANSCRIPT_NAME} \
-                        	-sc 120
+                        	-sc 150
 		fi
 
 		## If hits, move the summary line to a summary file
