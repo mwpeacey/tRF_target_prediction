@@ -1,7 +1,7 @@
 ################################################################################
 # miranda_to_bed.R
 # Combines miRanda summary files into a single output with genomic coordinates
-# of hit sites. Writes to .bed format.
+# of hit sites. Writes to .csv and .bed format.
 ################################################################################
 
 library(tidyverse)
@@ -126,6 +126,10 @@ miranda_output = miranda_output %>%
 ################################################################################
 # Export
 ################################################################################
+
+## Write csv 
+
+write_csv(miranda_output, file = glue('import/miranda/miranda_output_{score_cutoff}.csv'))
 
 ## Write bed
 
