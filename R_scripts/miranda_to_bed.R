@@ -117,6 +117,12 @@ miranda_output$strand = df$strand
 
 remove(df)
 
+# Filter to remove exon junction spanning hits
+
+miranda_output = miranda_output %>%
+  mutate(hit_length = as.numeric(genome_end) - as.numeric(genome_start) + 1) %>%
+  filter(hit_length <= 40)
+
 ################################################################################
 # Export
 ################################################################################
