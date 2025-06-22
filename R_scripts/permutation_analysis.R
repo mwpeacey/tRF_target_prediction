@@ -61,7 +61,7 @@ for (cutoff in cutoffs){
 
 	print(glue('Processing cutoff: {cutoff}'))
 
-	data_sub = data %>% filter(alignment_score >= cutoff)
+	data_sub = data %>% dplyr::filter(alignment_score >= cutoff)
 
 	if (nrow(data_sub) == 0) {
 		message("No more hits at cutoff ", cutoff, ". Terminating loop.")
