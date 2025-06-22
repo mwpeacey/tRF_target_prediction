@@ -1,6 +1,5 @@
 library(tidyverse)
 library(glue)
-library(GenomicFeatures)
 library(regioneR)
 
 args = commandArgs(TRUE)
@@ -16,24 +15,41 @@ if (is.na(n_cores)) n_cores <- 1
 
 # Load data
 
+print("Importing miRanda output...")
+
 data = read.csv(file = data_file, header = TRUE) %>%
   dplyr::rename(transcript_start = start, transcript_end = end, start = genome_start, end = genome_end) %>%
   dplyr::filter(alignment_score >= min_cutoff)
+
+print("Importing RepeatMasker annotation..")
 
 LTR = rtracklayer::readGFF(file = rmsk_file) %>%
   dplyr::filter(class_id == 'LTR')
 
 subject = makeGRangesFromDataFrame(LTR, keep.extra.columns = TRUE)
 
-GTF = makeTxDbFromGFF(file = gtf_file)
+end(subject[strand(subject) == '+']) = end(subject[strand(subject) == '+']) + 500
+start(subject[strand(subject) == '-']) = start(subject[strand(subject) == '-']) - 500
+
+print("Importing transcriptome...")
+
+GTF = rtracklayer::import(gtf_file)
+exons_df = GTF[GTF$type == "exon"]
+transcriptome_background = GenomicRanges::reduce(exons_df)
 
 # Permutation analysis 
 
-transcriptome_background = reduce(exons(GTF))
+results = tibble(
+  cutoff = numeric(),
+  observed_overlaps = integer(),
+  mean_random_overlaps = numeric(),
+  z_score = numeric(),
+  p_value = numeric()
+)
 
-results = tibble()
+cutoffs = seq(from = min_cutoff, by = 5, length.out = 20)
 
-cutoffs = seq(from = min_cutoff, by = 5, length.out = 10)
+print(cutoffs)
 
 set.seed(123)
 
@@ -50,7 +66,7 @@ for (cutoff in cutoffs){
 
 	query_sub = makeGRangesFromDataFrame(data_sub, keep.extra.columns = TRUE)
 
-	perm = overlapPermTest(mc.cores = n_cores, A = subject, B = query_sub, ntimes = 10, genome = 'mm10', universe=transcriptome_background)
+	perm = overlapPermTest(mc.cores = n_cores, alternative = "greater", A = subject, B = query_sub, ntimes = 50, genome = 'mm10', universe=transcriptome_background)
 
 	perm_results = perm$numOverlaps
 
