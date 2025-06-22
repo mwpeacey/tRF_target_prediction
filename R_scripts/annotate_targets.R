@@ -8,6 +8,8 @@
 library(tidyverse)
 library(glue)
 library(GenomicFeatures)
+library(pheatmap)
+library(AnnotationHub)
 
 ################################################################################
 ## Import data
@@ -40,6 +42,109 @@ data = merge(data, tRF_infomation, by = 'tRF') %>%
   separate(col = source_tRNAs, sep = '-', into = c('A', 'B', 'C', 'D'), remove = F) %>%
   unite(tRNA_anticodon, c('B', 'C'), remove = F, sep = '-') %>%
   dplyr::select(-c('A', 'B', 'C', 'D'))
+
+# Filter for GENCODE transcripts only
+
+data = data[grepl('ENSMUS', data$target_id), ]
+
+################################################################################
+## Annotate hit overlap with transcripts
+################################################################################
+
+# Initialize annotation database
+ah = AnnotationHub()
+edb = ah[["AH75036"]]
+
+query = GenomicRanges::GRanges(data)
+GenomeInfoDb::seqlevelsStyle(query) = 'NCBI'
+
+# Does the hit overlap a transcript?
+
+subject = transcripts(edb)
+GenomeInfoDb::seqlevelsStyle(subject) = 'NCBI'
+
+#subject = subset(subject, gene_id == 'ENSMUSG00000026277')
+
+#query = subset(query, ref_gene_id == 'ENSMUSG00000026277')
+
+transcript_overlap = findOverlaps(query = query, 
+                                  subject = subject,
+                                  type = 'any')
+
+transcript_overlap = as.data.frame(transcript_overlap)
+
+# Does it overlap an exon?
+
+subject = exonsBy(edb, by = 'tx')
+
+exon_overlap = findOverlaps(query = query, 
+                            subject = subject,
+                            type = 'any')
+
+exon_overlap = as.data.frame(exon_overlap)
+
+# Does it overlap a transcript with a CDS?
+
+transcripts = transcripts(edb)
+
+subject = exonsBy(edb, by = 'tx')
+
+subject = subject[names(subject) %in% transcripts[transcripts$tx_biotype == 'protein_coding']$tx_id]
+
+coding_overlap = findOverlaps(query = query, 
+                              subject = subject,
+                              type = 'any')
+
+coding_overlap = as.data.frame(coding_overlap)
+
+# Does it overlap the CDS itself?
+
+subject = cdsBy(edb, by = 'tx')
+
+CDS_overlap = findOverlaps(query = query, 
+                           subject = subject,
+                           type = 'any')
+
+CDS_overlap = as.data.frame(CDS_overlap)
+
+# Does it overlap the 5' UTR?
+
+subject = fiveUTRsByTranscript(edb)
+
+five_overlap = findOverlaps(query = query, 
+                            subject = subject,
+                            type = 'any')
+
+five_overlap = as.data.frame(five_overlap)
+
+# Does it overlap the 3' UTR?
+
+subject = threeUTRsByTranscript(edb)
+
+three_overlap = findOverlaps(query = query, 
+                             subject = subject,
+                             type = 'any')
+
+three_overlap = as.data.frame(three_overlap)
+
+## Annotate accordingly
+
+data = data %>%
+  mutate(intergenic = !(seq_len(n()) %in% transcript_overlap$queryHits)) %>%
+  mutate(intronic = !intergenic & !(seq_len(n()) %in% exon_overlap$queryHits)) %>%
+  mutate(non_coding = !intergenic & !intronic & !(seq_len(n()) %in% coding_overlap$queryHits)) %>%
+  mutate(CDS = !intergenic & !intronic & !non_coding & (seq_len(n()) %in% CDS_overlap$queryHits)) %>%
+  mutate(five_prime_UTR = !intergenic & !intronic & !non_coding & !CDS & (seq_len(n()) %in% five_overlap$queryHits)) %>%
+  mutate(three_prime_UTR = !intergenic & !intronic & !non_coding & !CDS & !five_prime_UTR & (seq_len(n()) %in% three_overlap$queryHits)) %>%
+  mutate(location = case_when(
+    intergenic ~ "None",
+    intronic ~ "Intron",
+    non_coding ~ "Exon - Non-coding",
+    CDS ~ "Exon - CDS",
+    five_prime_UTR ~ "Exon - 5 'UTR",
+    three_prime_UTR ~ "Exon - 3 'UTR",
+    TRUE ~ "other"
+  ))
 
 ################################################################################
 ## Annotate hit overlap with repeats
@@ -81,13 +186,104 @@ for (row in 1:nrow(data)) {
 
 data$LTR_family = LTR_family
 
+library(regioneR)
+
+transcriptome_background = GenomicRanges::reduce(transcripts(edb))
+query = makeGRangesFromDataFrame(unique_data, keep.extra.columns = TRUE)
+subject = makeGRangesFromDataFrame(LTR, keep.extra.columns = TRUE)
+
+overlapPermTest(A = subject, B = query, ntimes = 10, genome = 'mm10', universe=transcriptome_background, alternative = 'greater')
+
 ################################################################################
-## Heatmap
+## Collapse overlapping sites
 ################################################################################
 
-library(pheatmap)
+unique_data = data %>%
+  group_by(seqnames, start, end, strand) %>%
+  slice_max(order_by = alignment_score, with_ties = FALSE) %>%
+  ungroup()
 
-input = dplyr::filter(data, LTR == T) %>%
+################################################################################
+## Plots
+################################################################################
+
+input = dplyr::filter(unique_data) %>%
+  group_by(location) %>%
+  summarize(n = n())
+
+# Distribution of tRF target sites
+
+size = 1
+
+permutation_analysis = read_csv(file = 'import/LTR_enrichment_by_cutoff.csv')
+permutation_analysis$padj = p.adjust(permutation_analysis$p_value, method = "BH")
+
+scale_factor = 200
+
+plot = ggplot(data = dplyr::filter(unique_data), aes(x = alignment_score)) +
+  geom_histogram(fill = '#7AAFD3', color = 'black', binwidth = 1, boundary = 0) +
+  geom_line(data = permutation_analysis, 
+            aes(x = cutoff, y = z_score * scale_factor), 
+            color = 'firebrick', size = 1) +
+  xlab('Alignment score') +
+  ylab('Count') +
+  scale_y_continuous(name = "Count", 
+                     sec.axis = sec_axis(~ . / scale_factor, name = "Z-score (LTR enrichment)"),
+                     expand = expansion(mult = c(0, .1))) +
+  geom_vline(xintercept = 80, linetype = 'dashed') +
+  coord_cartesian(xlim = c(74, 90))
+  
+
+plot + theme_bw() + theme(
+  axis.text.x = element_text(size = 14, color = 'black'),
+  axis.text.y = element_text(size = 14, color = 'black'),
+  axis.title.x = element_text(size = 16, margin = margin(t = 7)),
+  axis.title.y = element_text(size = 16, margin = margin(r = 7)),
+  axis.line = element_line(size = size),
+  axis.ticks = element_line(size = size, color = 'black'),
+  panel.border = element_blank(),
+  legend.position = "none",
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  strip.text.x = element_text(size = 14, face = "bold"),
+  strip.background = element_rect(color = "white", fill = "white", size = 1.5, linetype = "solid"), 
+  plot.title = element_text(hjust = 0.5, size = 10)
+)
+
+# What position in a transcript is hit?
+
+input = dplyr::filter(unique_data, LTR == T, alignment_score >= 80) %>%
+  group_by(location) %>%
+  summarize(n = n())
+    
+size = 0.3527778
+
+plot = ggplot(input, aes(x = location, y= n)) +
+  geom_bar(stat='identity', fill = 'grey', width = 0.75) +
+  xlab('Target site location') +
+  ylab('# of target sites') +
+  scale_y_continuous(expand = expansion(mult = c(0, .1))) +
+  geom_text(aes(label =n), vjust = -0.5, size = 2.75)
+
+plot + theme_bw() + theme(
+  axis.text.x = element_text(size = 8, color = 'black',  angle = 45, vjust = 0.5),
+  axis.text.y = element_text(size = 8, color = 'black'),
+  axis.title.x = element_blank(),
+  axis.title.y = element_text(size = 10, margin = margin(r = 5)),
+  axis.line = element_line(size = size),
+  axis.ticks = element_line(size = size, color = 'black'),
+  panel.border = element_blank(),
+  legend.position = "none",
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  strip.text.x = element_text(size = 14, face = "bold"),
+  strip.background = element_rect(color = "white", fill = "white", size = 1.5, linetype = "solid"), 
+  plot.title = element_text(hjust = 0.5, size = 10)
+)
+
+# Heatmap 
+
+input = dplyr::filter(unique_data, LTR == T, alignment_score >= 80) %>%
   group_by(tRNA_anticodon, LTR_family) %>%
   summarize(n = n()) %>%
   pivot_wider(names_from = 'tRNA_anticodon', values_from = 'n') %>%
@@ -99,7 +295,8 @@ row.names(input) = input$LTR_family
 
 input = dplyr::select(input, -c('LTR_family'))
 
-input = log10(input+0.01)
+pheatmap(input, cluster_col = T, cluster_row = T, scale = 'row')
 
 pheatmap(input, cluster_col = T, cluster_row = T)
+
 
