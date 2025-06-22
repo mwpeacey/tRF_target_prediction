@@ -63,10 +63,6 @@ GenomeInfoDb::seqlevelsStyle(query) = 'NCBI'
 subject = transcripts(edb)
 GenomeInfoDb::seqlevelsStyle(subject) = 'NCBI'
 
-#subject = subset(subject, gene_id == 'ENSMUSG00000026277')
-
-#query = subset(query, ref_gene_id == 'ENSMUSG00000026277')
-
 transcript_overlap = findOverlaps(query = query, 
                                   subject = subject,
                                   type = 'any')
@@ -156,6 +152,8 @@ LTR = rtracklayer::readGFF(file = 'import/annotation_tables/mm10_rmsk_TE.gtf') %
   dplyr::filter(class_id == 'LTR')
 
 subject = makeGRangesFromDataFrame(LTR, keep.extra.columns = TRUE)
+end(subject[strand(subject) == '+']) = end(subject[strand(subject) == '+']) + 200
+start(subject[strand(subject) == '-']) = start(subject[strand(subject) == '-']) - 200
 
 # Create GRanges object for query data
 
@@ -199,9 +197,18 @@ overlapPermTest(A = subject, B = query, ntimes = 10, genome = 'mm10', universe=t
 ################################################################################
 
 unique_data = data %>%
+  arrange(desc(alignment_score), energy) %>%
   group_by(seqnames, start, end, strand) %>%
-  slice_max(order_by = alignment_score, with_ties = FALSE) %>%
+  slice(1) %>%
   ungroup()
+
+################################################################################
+## Export
+################################################################################
+
+unique_data = dplyr::filter(location != 'None', location != 'Intron')
+
+write_csv(unique_data, file = 'import/miranda_output_annotated.csv')
 
 ################################################################################
 ## Plots
@@ -252,7 +259,7 @@ plot + theme_bw() + theme(
 
 # What position in a transcript is hit?
 
-input = dplyr::filter(unique_data, LTR == T, alignment_score >= 80) %>%
+input = dplyr::filter(unique_data, LTR == T, alignment_score >= 75) %>%
   group_by(location) %>%
   summarize(n = n())
     
