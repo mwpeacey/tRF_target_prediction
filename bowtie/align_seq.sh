@@ -6,7 +6,7 @@
 #$ -o align_seq_output.txt
 #$ -e align_seq_output.txt
 
-## Aligns a list of sequences (e.g. PBS, tRF) to the mouse genome.
+## Aligns a list of sequences (e.g. PBS, tRF) to the a genome with bowtie.
 
 ## Requirements
 ## bowtie, samtools, bedtools
@@ -57,4 +57,4 @@ echo 'Converting to bed...'
 bedtools bamtobed -i ${RUN_ID}.bam.sorted > ${RUN_ID}.bed
 
 echo "Finished run on $(date)"
-mv /grid/schorn/home/mpeacey/scripts/tRF_alignment/align_seq_output.txt ${OUTPUT_DIRECTORY}
+mv /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/bowtie/align_seq_output.txt ${OUTPUT_DIRECTORY}
