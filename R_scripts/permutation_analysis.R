@@ -7,9 +7,9 @@ args = commandArgs(TRUE)
 
 data_file = args[1]
 rmsk_file = args[2]
-#gtf_file = args[]
-min_cutoff = as.numeric(args[3])
-output_directory = args[4]
+gtf_file = args[3]
+min_cutoff = as.numeric(args[4])
+output_directory = args[5]
 
 n_cores <- as.integer(Sys.getenv("NSLOTS"))
 if (is.na(n_cores)) n_cores <- 1
@@ -33,13 +33,13 @@ start(subject[strand(subject) == '-']) = start(subject[strand(subject) == '-']) 
 
 print("Importing transcriptome...")
 
-#GTF = rtracklayer::import(gtf_file)
-#exons_df = GTF[GTF$type == "exon"]
-#transcriptome_background = GenomicRanges::reduce(exons_df)
+GTF = rtracklayer::import(gtf_file)
+exons_df = GTF[GTF$type == "exon"]
+transcriptome_background = GenomicRanges::reduce(exons_df)
 
-ah = AnnotationHub()
-edb = ah[["AH75036"]]
-transcriptome_background = GenomicRanges::reduce(transcripts(edb))
+#ah = AnnotationHub()
+#edb = ah[["AH75036"]]
+#transcriptome_background = GenomicRanges::reduce(transcripts(edb))
 
 # Permutation analysis 
 
