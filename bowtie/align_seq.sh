@@ -38,11 +38,13 @@ echo "###########################"
 cd ${INDEX}
 echo 'Aligning...'
 
-bowtie -x ${BASENAME} \
--f ${SEQ} \
--S ${OUTPUT_DIRECTORY}/${RUN_ID}.sam \
--a \
--v ${MAX_MISMATCH}
+bowtie -f -v ${MAX_MISMATCH} -a -S ${BASENAME} ${SEQ} > ${OUTPUT_DIRECTORY}/${RUN_ID}.sam
+
+#bowtie -x ${BASENAME} \
+#-f ${SEQ} \
+#-S ${OUTPUT_DIRECTORY}/${RUN_ID}.sam \
+#-a \
+#-v ${MAX_MISMATCH}
 
 cd ${OUTPUT_DIRECTORY}
 
