@@ -45,7 +45,7 @@ data = merge(data, tRF_infomation, by = 'tRF') %>%
 
 # Filter for GENCODE transcripts only
 
-data = data[grepl('ENSMUS', data$target_id), ]
+#data = data[grepl('ENSMUS', data$target_id), ]
 
 ################################################################################
 ## Annotate hit overlap with transcripts
@@ -142,6 +142,23 @@ data = data %>%
     TRUE ~ "other"
   ))
 
+# Does it overlap a transcript with a SCAN domain
+
+mouse_scan_genes = read_csv('import/annotation_tables/mouse_scan_genes.csv')
+
+subject = exonsBy(edb, by = 'tx')
+
+subject = subject[names(subject) %in% transcripts[transcripts$gene_id %in% mouse_scan_genes$gene_id]$tx_id]
+
+SCAN_overlap = findOverlaps(query = query, 
+                            subject = subject,
+                            type = 'any')
+
+SCAN_overlap = as.data.frame(SCAN_overlap)
+
+data = data %>%
+  mutate(SCAN = seq_len(n()) %in% SCAN_overlap$queryHits)
+
 ################################################################################
 ## Annotate hit overlap with repeats
 ################################################################################
@@ -184,14 +201,6 @@ for (row in 1:nrow(data)) {
 
 data$LTR_family = LTR_family
 
-library(regioneR)
-
-transcriptome_background = GenomicRanges::reduce(transcripts(edb))
-query = makeGRangesFromDataFrame(unique_data, keep.extra.columns = TRUE)
-subject = makeGRangesFromDataFrame(LTR, keep.extra.columns = TRUE)
-
-overlapPermTest(A = subject, B = query, ntimes = 10, genome = 'mm10', universe=transcriptome_background, alternative = 'greater')
-
 ################################################################################
 ## Collapse overlapping sites
 ################################################################################
@@ -206,46 +215,92 @@ unique_data = data %>%
 ## Export
 ################################################################################
 
-unique_data = dplyr::filter(location != 'None', location != 'Intron')
-
-write_csv(unique_data, file = 'import/miranda_output_annotated.csv')
+write_csv(data, file = 'import/miranda_output_annotated.csv')
+write_csv(unique_data, file = 'import/miranda_output_unique_annotated.csv')
 
 ################################################################################
 ## Plots
 ################################################################################
 
-input = dplyr::filter(unique_data) %>%
+library(patchwork)
+library(tidyverse)
+
+# Distribution of alignment scores
+
+input = dplyr::filter(unique_data, alignment_score >= 70) %>%
   group_by(location) %>%
   summarize(n = n())
-
-# Distribution of tRF target sites
 
 size = 1
 
 permutation_analysis = read_csv(file = 'import/LTR_enrichment_by_cutoff.csv')
 permutation_analysis$padj = p.adjust(permutation_analysis$p_value, method = "BH")
 
-scale_factor = 200
+cutoff = 80
 
-plot = ggplot(data = dplyr::filter(unique_data), aes(x = alignment_score)) +
+n = nrow(dplyr::filter(unique_data, alignment_score >= cutoff, LTR == T))
+
+# Histogram
+hist_plot = ggplot(unique_data, aes(x = alignment_score)) +
   geom_histogram(fill = '#7AAFD3', color = 'black', binwidth = 1, boundary = 0) +
-  geom_line(data = permutation_analysis, 
-            aes(x = cutoff, y = z_score * scale_factor), 
-            color = 'firebrick', size = 1) +
+  geom_vline(xintercept = 80, linetype = 'dashed') +
+  coord_cartesian(xlim = c(74, 90)) +
+  scale_y_continuous(limits = c(0, 25000),
+                     expand = expansion(mult = c(0, .1))) +
   xlab('Alignment score') +
   ylab('Count') +
-  scale_y_continuous(name = "Count", 
-                     sec.axis = sec_axis(~ . / scale_factor, name = "Z-score (LTR enrichment)"),
-                     expand = expansion(mult = c(0, .1))) +
+  annotate("text", x = 85, y = 20000, 
+           label = paste0("n = ", n, "\n(score ≥ 80)"), 
+           hjust = 1, size = 5) +
+  theme_bw() + theme(
+    axis.text.x = element_text(size = 14, color = 'black'),
+    axis.text.y = element_text(size = 14, color = 'black'),
+    axis.title.x = element_blank(),
+    axis.title.y.left = element_text(size = 16, margin = margin(r = 7)),
+    axis.line = element_line(size = size),
+    axis.ticks = element_line(size = size, color = 'black'),
+    panel.border = element_blank(),
+    legend.position = "none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.text.x = element_text(size = 14, face = "bold"),
+    strip.background = element_rect(color = "white", fill = "white", size = 1.5, linetype = "solid"), 
+    plot.title = element_text(hjust = 0.5, size = 10)
+  )
+
+# Z-score line
+z_plot = ggplot(permutation_analysis, aes(x = cutoff, y = z_score)) +
+  geom_line(color = 'firebrick', size = 1) +
   geom_vline(xintercept = 80, linetype = 'dashed') +
-  coord_cartesian(xlim = c(74, 90))
-  
+  coord_cartesian(xlim = c(74, 90)) +
+  xlab('Alignment score') +
+  ylab('Z-score (LTR enrichment)') +
+  theme_bw() + theme(
+    axis.text.x = element_text(size = 14, color = 'black'),
+    axis.text.y = element_text(size = 14, color = 'black'),
+    axis.title.x = element_text(size = 16, margin = margin(t = 7)),
+    axis.title.y.left = element_text(size = 16, margin = margin(r = 7)),
+    axis.title.y.right = element_text(size = 16, margin = margin(l = 7)),
+    axis.line = element_line(size = size),
+    axis.ticks = element_line(size = size, color = 'black'),
+    panel.border = element_blank(),
+    legend.position = "none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.text.x = element_text(size = 14, face = "bold"),
+    strip.background = element_rect(color = "white", fill = "white", size = 1.5, linetype = "solid"), 
+    plot.title = element_text(hjust = 0.5, size = 10)
+  )
+
+# Combine them
+plot = hist_plot / z_plot + plot_layout(heights = c(2, 1))
 
 plot + theme_bw() + theme(
   axis.text.x = element_text(size = 14, color = 'black'),
   axis.text.y = element_text(size = 14, color = 'black'),
   axis.title.x = element_text(size = 16, margin = margin(t = 7)),
-  axis.title.y = element_text(size = 16, margin = margin(r = 7)),
+  axis.title.y.left = element_text(size = 16, margin = margin(r = 7)),
+  axis.title.y.right = element_text(size = 16, margin = margin(l = 7)),
   axis.line = element_line(size = size),
   axis.ticks = element_line(size = size, color = 'black'),
   panel.border = element_blank(),
@@ -257,9 +312,15 @@ plot + theme_bw() + theme(
   plot.title = element_text(hjust = 0.5, size = 10)
 )
 
-# What position in a transcript is hit?
+# What position in a transcript is hit? (LTRs_)
 
-input = dplyr::filter(unique_data, LTR == T, alignment_score >= 75) %>%
+input = dplyr::filter(unique_data, LTR == T, alignment_score >= 80) %>%
+  group_by(location) %>%
+  summarize(n = n())
+
+# What position in a transcript is hit? (SCAN genes)
+
+input = dplyr::filter(unique_data, alignment_score >= 80) %>%
   group_by(location) %>%
   summarize(n = n())
     
@@ -290,11 +351,13 @@ plot + theme_bw() + theme(
 
 # Heatmap 
 
-input = dplyr::filter(unique_data, LTR == T, alignment_score >= 80) %>%
+input = dplyr::filter(unique_data, LTR == T, LTR_family != 'LTR', alignment_score >= 75) %>%
   group_by(tRNA_anticodon, LTR_family) %>%
   summarize(n = n()) %>%
   pivot_wider(names_from = 'tRNA_anticodon', values_from = 'n') %>%
   as.data.frame()
+
+my_palette = colorRampPalette(c("#f0f0f0", "#b30000"))(100)
 
 input[is.na(input)] = 0
 
@@ -302,7 +365,7 @@ row.names(input) = input$LTR_family
 
 input = dplyr::select(input, -c('LTR_family'))
 
-pheatmap(input, cluster_col = T, cluster_row = T, scale = 'row')
+pheatmap(input, cluster_col = T, cluster_row = T, scale = 'row', color = my_palette)
 
 pheatmap(input, cluster_col = T, cluster_row = T)
 
