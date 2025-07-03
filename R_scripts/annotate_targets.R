@@ -202,13 +202,77 @@ for (row in 1:nrow(data)) {
 data$LTR_family = LTR_family
 
 ################################################################################
+## Annotate overlap with chimeric transcripts 
+################################################################################
+
+# Read chimeras
+chimeras = read_csv('~/Downloads/Oomen_chimeras.csv') %>%
+  separate(TE_position, sep = ':', into = c('seqnames', 'position')) %>%
+  separate(position, sep = '-', into = c('start', 'end')) %>%
+  dplyr::select(c('TE_strand', 'seqnames', 'start', 'end')) %>%
+  dplyr::rename(strand = 'TE_strand')
+
+# Create GRanges object 
+subject = makeGRangesFromDataFrame(chimeras, keep.extra.columns = TRUE)
+seqlevelsStyle(subject) = 'NCBI'
+
+# Create GRanges object for query data
+query = GRanges(data)
+seqlevelsStyle(query) = 'NCBI'
+
+# Find overlaps between query and subject
+chimera_overlap = findOverlaps(query = query, subject = subject, type = 'within', ignore.strand = T)
+chimera_overlap = as.data.frame(chimera_overlap)
+
+# Add chimera indicator to data
+data = data %>%
+  dplyr::mutate(chimera = seq_len(n()) %in% chimera_overlap$queryHits)
+
+################################################################################
+## Annotate Stringtie transcripts with ORFs
+################################################################################
+
+# Import open reading frames deleted in assembled transcripts
+
+open_reading_frames = read.table('~/tRF_targets_new/mouse_embryo_tRF3b_v2/mouse_embryo_assembled_transcripts_ORFs.bed') %>%
+  dplyr::rename(target_id = V1, ORF_start = V2, ORF_end = V3, ORF_info = V4) %>%
+  tidyr::separate(ORF_info, sep = ';', into = c('ORF_ID', 'ORF_type', 'ORF_length', 'ORF_frame', 'other'))
+
+open_reading_frames$ORF_ID = stringr::str_remove(open_reading_frames$ORF_ID, 'ID=')
+open_reading_frames$ORF_type = stringr::str_remove(open_reading_frames$ORF_type, 'ORF_type=')
+open_reading_frames$ORF_length = stringr::str_remove(open_reading_frames$ORF_length, 'ORF_len=')
+open_reading_frames$ORF_frame = stringr::str_remove(open_reading_frames$ORF_frame, 'ORF_frame=')
+
+# Add blast information if present
+
+blast_output = read.csv(file = '~/tRF_targets_new/mouse_embryo_tRF3b_v2/mouse_embryo_assembled_transcripts_ORFs_blast.csv', header = F) %>%
+  dplyr::rename(ORF_ID = V1, blast_match = V2, pident = V3, length = V4, mismatch = V5, gapopen = V6, qstart = V7, qend = V8,
+                sstart = V9, send = V10, evalue = V11, bitscore = V12)
+
+open_reading_frames_annotated = merge(open_reading_frames, blast_output, by = 'ORF_ID')
+
+open_reading_frames_annotated_filtered = open_reading_frames_annotated %>%
+  group_by(target_id) %>%
+  slice_max(bitscore, with_ties = FALSE) %>%
+  ungroup()
+
+data = merge(data, open_reading_frames_annotated_filtered, by = 'target_id', all.x = T)
+
+## Annotate tRF position
+
+data = dplyr::mutate(data, position_relative_to_ORF = case_when(is.na(ORF_ID) ~ 'None',
+                                                                transcript_end < ORF_start ~ '5_UTR',
+                                                                transcript_start > ORF_end ~ '3_UTR',
+                                                                T ~ 'CDS'))
+
+################################################################################
 ## Collapse overlapping sites
 ################################################################################
 
 unique_data = data %>%
   arrange(desc(alignment_score), energy) %>%
   group_by(seqnames, start, end, strand) %>%
-  slice(1) %>%
+  dplyr::slice(1) %>%
   ungroup()
 
 ################################################################################
@@ -217,6 +281,28 @@ unique_data = data %>%
 
 write_csv(data, file = 'import/miranda_output_annotated.csv')
 write_csv(unique_data, file = 'import/miranda_output_unique_annotated.csv')
+
+data = read_csv('import/miranda_output_annotated.csv')
+unique_data = read_csv('import/miranda_output_unique_annotated.csv')
+
+
+## Overlap 
+
+query = GRanges(unique_data)
+
+CLIP = read.table('~/Downloads/GSE140838_CLIP_tagIP_vs_untagIP_peaksFC.bed') %>%
+  dplyr::rename(seqnames = V1, start = V2, end = V3, p = V4, strand = V6) %>%
+  dplyr::filter(p >= 1)
+
+subject = GRanges(CLIP)
+
+overlap = findOverlaps(query = query, subject = subject, type = 'any', ignore.strand = F)
+overlap = as.data.frame(overlap)
+
+unique_data  = unique_data %>%
+  dplyr::mutate(AGO_peak = dplyr::row_number() %in% overlap$queryHits)
+
+df = dplyr::filter(unique_data, AGO_peak == T, LTR == T)
 
 ################################################################################
 ## Plots
@@ -312,22 +398,24 @@ plot + theme_bw() + theme(
   plot.title = element_text(hjust = 0.5, size = 10)
 )
 
-# What position in a transcript is hit? (LTRs_)
+# What position in a transcript is hit? (LTRs)
 
-input = dplyr::filter(unique_data, LTR == T, alignment_score >= 80) %>%
-  group_by(location) %>%
+Leu_tRFs = c('tRF_76', 'tRF_77', 'tRF_78', 'tRF_79')
+
+input = dplyr::filter(unique_data, LTR == T, alignment_score >= 75, tRF %in% Leu_tRFs) %>%
+  group_by(location, LTR_family) %>%
   summarize(n = n())
 
 # What position in a transcript is hit? (SCAN genes)
 
-input = dplyr::filter(unique_data, alignment_score >= 80) %>%
+input = dplyr::filter(unique_data, SCAN == T, alignment_score >= 75) %>%
   group_by(location) %>%
   summarize(n = n())
     
 size = 0.3527778
 
-plot = ggplot(input, aes(x = location, y= n)) +
-  geom_bar(stat='identity', fill = 'grey', width = 0.75) +
+plot = ggplot(input, aes(x = location, y = n, fill = LTR_family)) +
+  geom_bar(stat='identity', width = 0.75) +
   xlab('Target site location') +
   ylab('# of target sites') +
   scale_y_continuous(expand = expansion(mult = c(0, .1))) +
@@ -341,7 +429,6 @@ plot + theme_bw() + theme(
   axis.line = element_line(size = size),
   axis.ticks = element_line(size = size, color = 'black'),
   panel.border = element_blank(),
-  legend.position = "none",
   panel.grid.major = element_blank(),
   panel.grid.minor = element_blank(),
   strip.text.x = element_text(size = 14, face = "bold"),
