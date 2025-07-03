@@ -18,18 +18,8 @@ library(AnnotationHub)
 # Load data
 
 data = read.csv(file = 'import/miranda/miranda_output_70.csv', header = TRUE) %>%
-  dplyr::rename(transcript_start = start, transcript_end = end, start = genome_start, end = genome_end) %>%
+  dplyr::rename(start = genomic_start, end = genomic_end) %>%
   dplyr::filter(alignment_score >= 70)
-
-# Add gene information 
-
-transcript_to_gene = as.data.frame(rtracklayer::import('import/transcriptome_assembly/stringtie_merged_filtered.gtf')) %>%
-  dplyr::filter(type == 'transcript') %>%
-  dplyr::rename(target_id = 'transcript_id') %>%
-  dplyr::select(c('target_id', 'ref_gene_id', 'gene_name'))
-
-data = merge(data, transcript_to_gene, by = 'target_id') %>%
-  separate(ref_gene_id, into = c('ref_gene_id'))
 
 # Add tRF information
 
@@ -43,110 +33,93 @@ data = merge(data, tRF_infomation, by = 'tRF') %>%
   unite(tRNA_anticodon, c('B', 'C'), remove = F, sep = '-') %>%
   dplyr::select(-c('A', 'B', 'C', 'D'))
 
-# Filter for GENCODE transcripts only
-
-#data = data[grepl('ENSMUS', data$target_id), ]
-
 ################################################################################
 ## Annotate hit overlap with transcripts
 ################################################################################
 
-# Initialize annotation database
-ah = AnnotationHub()
-edb = ah[["AH75036"]]
+#Build GRanges of hits
+gr_hits = makeGRangesFromDataFrame(
+  data,
+  seqnames.field   = "seqnames",
+  start.field      = "start",
+  end.field        = "end",
+  strand.field     = "strand",
+  keep.extra.columns = TRUE
+)
 
-query = GenomicRanges::GRanges(data)
-GenomeInfoDb::seqlevelsStyle(query) = 'NCBI'
+# Load annotation 
+ah  = AnnotationHub()
+txdb = ah[["AH75036"]]
 
-# Does the hit overlap a transcript?
+# Extract feature GRanges
+gr_tx     = transcripts(txdb)
+gr_exons  = exons(txdb)
+gr_cds    = cdsBy(txdb, by="tx") %>% unlist()
+gr_utr5   = fiveUTRsByTranscript(txdb) %>% unlist()
+gr_utr3   = threeUTRsByTranscript(txdb) %>% unlist()
 
-subject = transcripts(edb)
-GenomeInfoDb::seqlevelsStyle(subject) = 'NCBI'
+# Harmonize seqlevel styles
+seqlevelsStyle(gr_hits)  = "UCSC"
+seqlevelsStyle(gr_tx)    = "UCSC"
+seqlevelsStyle(gr_exons) = "UCSC"
+seqlevelsStyle(gr_cds)   = "UCSC"
+seqlevelsStyle(gr_utr5)  = "UCSC"
+seqlevelsStyle(gr_utr3)  = "UCSC"
 
-transcript_overlap = findOverlaps(query = query, 
-                                  subject = subject,
-                                  type = 'any')
+gr_exonsByTx = exonsBy(txdb, by="tx")
+seqlevelsStyle(gr_exonsByTx) = "UCSC"
 
-transcript_overlap = as.data.frame(transcript_overlap)
+gr_exon_tx <- unlist(gr_exonsByTx)
+# capture the transcript ID in a metadata column
+mcols(gr_exon_tx)$tx_id = rep(names(gr_exonsByTx),
+                               elementNROWS(gr_exonsByTx))
 
-# Does it overlap an exon?
+# 2) map each hit to any overlapping exon → transcript
+mcols(gr_hits)$hit_idx = seq_along(gr_hits)
+ex_ol = findOverlaps(gr_hits, gr_exon_tx, type="any")
 
-subject = exonsBy(edb, by = 'tx')
+tx_map = tibble(
+  hit_idx    = mcols(gr_hits)$hit_idx[queryHits(ex_ol)],
+  transcript = mcols(gr_exon_tx)$tx_id[subjectHits(ex_ol)]
+) %>%
+  group_by(hit_idx) %>%
+  summarize(transcript = paste(unique(transcript), collapse = ";"), .groups="drop")
 
-exon_overlap = findOverlaps(query = query, 
-                            subject = subject,
-                            type = 'any')
+# 3) Build your logical annotations as before
+annot = tibble(
+  hit_idx       = mcols(gr_hits)$hit_idx,
+  overlaps_5utr  = overlapsAny(gr_hits, gr_utr5),
+  overlaps_3utr  = overlapsAny(gr_hits, gr_utr3),
+  overlaps_cds   = overlapsAny(gr_hits, gr_cds),
+  overlaps_exon  = overlapsAny(gr_hits, gr_exons)  # unstranded exons
+)
 
-exon_overlap = as.data.frame(exon_overlap)
+# 4) Stitch transcript names into annot, then join into your data
+annot = annot %>%
+  left_join(tx_map, by="hit_idx")
 
-# Does it overlap a transcript with a CDS?
+data <- data %>%
+  bind_cols(annot %>% dplyr::select(-hit_idx)) %>%
+  mutate(
+    location = case_when(
+      overlaps_5utr ~ "Exon - 5' UTR",
+      overlaps_3utr ~ "Exon - 3' UTR",
+      overlaps_cds  ~ "Exon - CDS",
+      overlaps_exon ~ "Exon - non-coding",
+      TRUE          ~ "Intergenic"
+    )
+  ) %>%
+  dplyr::select(
+    tRF, seqnames, alignment_score, energy,
+    start, end, alignment_length,
+    strand, location, transcript
+  )
 
-transcripts = transcripts(edb)
-
-subject = exonsBy(edb, by = 'tx')
-
-subject = subject[names(subject) %in% transcripts[transcripts$tx_biotype == 'protein_coding']$tx_id]
-
-coding_overlap = findOverlaps(query = query, 
-                              subject = subject,
-                              type = 'any')
-
-coding_overlap = as.data.frame(coding_overlap)
-
-# Does it overlap the CDS itself?
-
-subject = cdsBy(edb, by = 'tx')
-
-CDS_overlap = findOverlaps(query = query, 
-                           subject = subject,
-                           type = 'any')
-
-CDS_overlap = as.data.frame(CDS_overlap)
-
-# Does it overlap the 5' UTR?
-
-subject = fiveUTRsByTranscript(edb)
-
-five_overlap = findOverlaps(query = query, 
-                            subject = subject,
-                            type = 'any')
-
-five_overlap = as.data.frame(five_overlap)
-
-# Does it overlap the 3' UTR?
-
-subject = threeUTRsByTranscript(edb)
-
-three_overlap = findOverlaps(query = query, 
-                             subject = subject,
-                             type = 'any')
-
-three_overlap = as.data.frame(three_overlap)
-
-## Annotate accordingly
-
-data = data %>%
-  mutate(intergenic = !(seq_len(n()) %in% transcript_overlap$queryHits)) %>%
-  mutate(intronic = !intergenic & !(seq_len(n()) %in% exon_overlap$queryHits)) %>%
-  mutate(non_coding = !intergenic & !intronic & !(seq_len(n()) %in% coding_overlap$queryHits)) %>%
-  mutate(CDS = !intergenic & !intronic & !non_coding & (seq_len(n()) %in% CDS_overlap$queryHits)) %>%
-  mutate(five_prime_UTR = !intergenic & !intronic & !non_coding & !CDS & (seq_len(n()) %in% five_overlap$queryHits)) %>%
-  mutate(three_prime_UTR = !intergenic & !intronic & !non_coding & !CDS & !five_prime_UTR & (seq_len(n()) %in% three_overlap$queryHits)) %>%
-  mutate(location = case_when(
-    intergenic ~ "None",
-    intronic ~ "Intron",
-    non_coding ~ "Exon - Non-coding",
-    CDS ~ "Exon - CDS",
-    five_prime_UTR ~ "Exon - 5 'UTR",
-    three_prime_UTR ~ "Exon - 3 'UTR",
-    TRUE ~ "other"
-  ))
-
-# Does it overlap a transcript with a SCAN domain
+# Does it overlap a transcript with a SCAN domain?
 
 mouse_scan_genes = read_csv('import/annotation_tables/mouse_scan_genes.csv')
 
-subject = exonsBy(edb, by = 'tx')
+subject = exonsBy(txdb, by = 'tx')
 
 subject = subject[names(subject) %in% transcripts[transcripts$gene_id %in% mouse_scan_genes$gene_id]$tx_id]
 
