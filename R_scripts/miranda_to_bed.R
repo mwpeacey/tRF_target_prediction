@@ -77,7 +77,21 @@ miranda_output$window_end = as.numeric(miranda_output$window_end)
 
 # Determine genomic coordinates of hit site
 
-miranda_output = mutate(miranda_output, genomic_start = window_start + start, genomic_end = window_start + end)
+
+miranda_output <- miranda_output %>%
+  mutate(
+    genomic_start = if_else(
+      strand == "+",
+      window_start + start,
+      window_end   - end   + 1
+    ),
+    genomic_end   = if_else(
+      strand == "+",
+      window_start + end,
+      window_end   - start + 1
+    )
+  )
+
 
 # Remove duplicate hits that occur within window overlaps
 
