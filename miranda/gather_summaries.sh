@@ -31,7 +31,7 @@ for folder in */ ; do
 
 	cd "$folder"
 
-	cp *_summary ${RUN_DIRECTORY}/summary_files_${ID}
+	cp summary_* ${RUN_DIRECTORY}/summary_files_${ID}
 
 	cd ${RUN_DIRECTORY}
 
