@@ -117,20 +117,20 @@ data <- data %>%
 
 # Does it overlap a transcript with a SCAN domain?
 
-mouse_scan_genes = read_csv('import/annotation_tables/mouse_scan_genes.csv')
+#mouse_scan_genes = read_csv('import/annotation_tables/mouse_scan_genes.csv')
 
-subject = exonsBy(txdb, by = 'tx')
+#subject = exonsBy(txdb, by = 'tx')
 
-subject = subject[names(subject) %in% transcripts[transcripts$gene_id %in% mouse_scan_genes$gene_id]$tx_id]
+#subject = subject[names(subject) %in% transcripts[transcripts$gene_id %in% mouse_scan_genes$gene_id]$tx_id]
 
-SCAN_overlap = findOverlaps(query = query, 
-                            subject = subject,
-                            type = 'any')
+#SCAN_overlap = findOverlaps(query = query, 
+#                            subject = subject,
+#                            type = 'any')
 
-SCAN_overlap = as.data.frame(SCAN_overlap)
+#SCAN_overlap = as.data.frame(SCAN_overlap)
 
-data = data %>%
-  mutate(SCAN = seq_len(n()) %in% SCAN_overlap$queryHits)
+#data = data %>%
+#  mutate(SCAN = seq_len(n()) %in% SCAN_overlap$queryHits)
 
 ################################################################################
 ## Annotate hit overlap with repeats
