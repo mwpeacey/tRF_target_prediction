@@ -12,7 +12,7 @@ library(glue)
 ## Import data
 ################################################################################
 
-filenames = list.files(glue("import/miranda"),
+filenames = list.files(glue("import/miranda/summary_files_mm10_tRF3b_60"),
                        pattern="summary*", 
                        full.names=TRUE)
 
@@ -45,7 +45,7 @@ remove(temp)
 
 # Rename columns and enforce a post-run score cutoff.
 
-score_cutoff = 70
+score_cutoff = 60
 
 miranda_output = data %>%
   dplyr::rename('tRF' = 'V1', 
@@ -77,8 +77,7 @@ miranda_output$window_end = as.numeric(miranda_output$window_end)
 
 # Determine genomic coordinates of hit site
 
-
-miranda_output <- miranda_output %>%
+miranda_output = miranda_output %>%
   mutate(
     genomic_start = if_else(
       strand == "+",

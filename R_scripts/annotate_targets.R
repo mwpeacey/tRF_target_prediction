@@ -17,9 +17,9 @@ library(AnnotationHub)
 
 # Load data
 
-data = read.csv(file = 'import/miranda/miranda_output_70.csv', header = TRUE) %>%
+data = read.csv(file = 'import/miranda/miranda_output_90.csv', header = TRUE) %>%
   dplyr::rename(start = genomic_start, end = genomic_end) %>%
-  dplyr::filter(alignment_score >= 70)
+  dplyr::filter(alignment_score >= 90)
 
 # Add tRF information
 
