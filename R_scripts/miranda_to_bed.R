@@ -74,8 +74,9 @@ miranda_output = data %>%
   miRNA_position = as.character(miRNA_position),
   target_position = as.character(target_position),
   alignment_length = as.numeric(alignment_length),
-  strand = as.character(strand)) %>%
-  dplyr::filter(alignment_score >= score_cutoff)
+  strand = as.character(strand))
+
+#  dplyr::filter(alignment_score >= score_cutoff)
 
 # Find start and end positions of the hit in the window
 
