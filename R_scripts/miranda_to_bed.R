@@ -58,15 +58,15 @@ print(nrow(data))
 print(colnames(data))
 
 miranda_output = data %>%
-  dplyr::rename('tRF' = 'V1', 
-                'coordinates' = 'V2', 
-                'alignment_score' = 'V3',
-                'energy' = 'V4',
-                'Z-score' = 'V5',
-                'miRNA_position' = 'V6',
-                'target_position' = 'V7',
-                'alignment_length' = 'V8',
-                'strand' = 'V11') %>% 
+  dplyr::rename('tRF' = V1, 
+                'coordinates' = V2, 
+                'alignment_score' = V3,
+                'energy' = V4,
+                'Z_score' = V5,
+                'miRNA_position' = V6,
+                'target_position' = V7,
+                'alignment_length' = V8,
+                'strand' = V11) %>% 
   dplyr::mutate(
   alignment_score = as.numeric(alignment_score),
   energy = as.numeric(energy),
@@ -74,9 +74,8 @@ miranda_output = data %>%
   miRNA_position = as.character(miRNA_position),
   target_position = as.character(target_position),
   alignment_length = as.numeric(alignment_length),
-  strand = as.character(strand))
-
-#  dplyr::filter(alignment_score >= score_cutoff)
+  strand = as.character(strand)) %>%
+  dplyr::filter(alignment_score >= score_cutoff)
 
 # Find start and end positions of the hit in the window
 
@@ -132,13 +131,13 @@ miranda_output = dplyr::select(miranda_output, c('tRF',
 
 ## Write csv 
 
-write_csv(miranda_output, file = glue('{output_directory}/miranda_output_{score_cutoff}.csv')
+write_csv(miranda_output, file = glue('{output_directory}/miranda_output_{score_cutoff}.csv'))
 
 ## Write bed
 
 miranda_bed = miranda_output %>%
   dplyr::select(c('seqnames', 'genomic_start', 'genomic_end', 'tRF', 'strand', 'alignment_score')) %>%
-  dplyr::rename(chrom = 'seqnames', chromStart = 'genomic_start', chromEnd = 'genomic_end', name = 'tRF', score = 'alignment_score') 
+  dplyr::rename(chrom = 'seqnames', chromStart = 'genomic_start', chromEnd = 'genomic_end', name = 'tRF', score = 'alignment_score')
 
 rtracklayer::export.bed(con = glue("{output_directory}/miranda_output_{score_cutoff}.bed"), 
                         object = GenomicRanges::makeGRangesFromDataFrame(miranda_bed, keep.extra.columns = T),
