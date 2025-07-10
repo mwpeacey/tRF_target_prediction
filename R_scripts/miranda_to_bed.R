@@ -5,21 +5,26 @@
 ################################################################################
 
 library(tidyverse)
-library(GenomicFeatures)
 library(glue)
+
+args = commandArgs(TRUE)
+
+summary_directory = args[1]
+output_directory = args[2]
+score_cutoff = as.numeric(args[3])
 
 ################################################################################
 ## Import data
 ################################################################################
 
-filenames = list.files(glue("import/miranda/summary_files_mm10_tRF3b_60"),
+filenames = list.files(summary_directory,
                        pattern="summary*", 
                        full.names=TRUE)
 
 counter = 1
 for (file in filenames){
   
-  temp = read.csv(file = file, header = F, sep = '\t')
+  temp = read.csv(file = file, header = F, sep = '\t', colClasses = 'character')
   
   if (counter == 1){
     
@@ -45,7 +50,12 @@ remove(temp)
 
 # Rename columns and enforce a post-run score cutoff.
 
-score_cutoff = 60
+data = data[, -which(names(data) %in% c("V9", "V10"))]
+
+head(data)
+
+print(nrow(data))
+print(colnames(data))
 
 miranda_output = data %>%
   dplyr::rename('tRF' = 'V1', 
@@ -56,7 +66,15 @@ miranda_output = data %>%
                 'miRNA_position' = 'V6',
                 'target_position' = 'V7',
                 'alignment_length' = 'V8',
-                'strand' = 'V11') %>%
+                'strand' = 'V11') %>% 
+  dplyr::mutate(
+  alignment_score = as.numeric(alignment_score),
+  energy = as.numeric(energy),
+  Z_score = as.numeric(Z_score),
+  miRNA_position = as.character(miRNA_position),
+  target_position = as.character(target_position),
+  alignment_length = as.numeric(alignment_length),
+  strand = as.character(strand)) %>%
   dplyr::filter(alignment_score >= score_cutoff)
 
 # Find start and end positions of the hit in the window
@@ -113,7 +131,7 @@ miranda_output = dplyr::select(miranda_output, c('tRF',
 
 ## Write csv 
 
-write_csv(miranda_output, file = glue('import/miranda/miranda_output_{score_cutoff}.csv'))
+write_csv(miranda_output, file = glue('{output_directory}/miranda_output_{score_cutoff}.csv')
 
 ## Write bed
 
@@ -121,6 +139,6 @@ miranda_bed = miranda_output %>%
   dplyr::select(c('seqnames', 'genomic_start', 'genomic_end', 'tRF', 'strand', 'alignment_score')) %>%
   dplyr::rename(chrom = 'seqnames', chromStart = 'genomic_start', chromEnd = 'genomic_end', name = 'tRF', score = 'alignment_score') 
 
-rtracklayer::export.bed(con = glue("import/miranda/miranda_output_{score_cutoff}.bed"), 
+rtracklayer::export.bed(con = glue("{output_directory}/miranda_output_{score_cutoff}.bed"), 
                         object = GenomicRanges::makeGRangesFromDataFrame(miranda_bed, keep.extra.columns = T),
                         ignore.strand = F)
