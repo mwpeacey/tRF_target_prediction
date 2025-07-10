@@ -112,6 +112,8 @@ miranda_output = dplyr::select(miranda_output, c('tRF',
                                                  'alignment_length', 
                                                  'strand'))
 
+miranda_output = miranda_output[!is.na(miranda_output$genomic_start), ]
+
 ################################################################################
 # Export
 ################################################################################
