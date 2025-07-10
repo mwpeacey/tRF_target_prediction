@@ -1,7 +1,7 @@
 #!/bin/bash
 #$ -cwd
 #$ -pe threads 1
-#$ -l m_mem_free=8G
+#$ -l m_mem_free=32G
 #$ -o miranda_to_bed_output.txt
 #$ -e miranda_to_bed_output.txt
 

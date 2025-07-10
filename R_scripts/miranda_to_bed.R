@@ -52,11 +52,6 @@ remove(temp)
 
 data = data[, -which(names(data) %in% c("V9", "V10"))]
 
-head(data)
-
-print(nrow(data))
-print(colnames(data))
-
 miranda_output = data %>%
   dplyr::rename('tRF' = V1, 
                 'coordinates' = V2, 
@@ -67,14 +62,6 @@ miranda_output = data %>%
                 'target_position' = V7,
                 'alignment_length' = V8,
                 'strand' = V11) %>% 
-  dplyr::mutate(
-  alignment_score = as.numeric(alignment_score),
-  energy = as.numeric(energy),
-  Z_score = as.numeric(Z_score),
-  miRNA_position = as.character(miRNA_position),
-  target_position = as.character(target_position),
-  alignment_length = as.numeric(alignment_length),
-  strand = as.character(strand)) %>%
   dplyr::filter(alignment_score >= score_cutoff)
 
 # Find start and end positions of the hit in the window
