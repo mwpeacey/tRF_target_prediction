@@ -1,15 +1,15 @@
 library(tidyverse)
 library(glue)
 library(regioneR)
-library(AnnotationHub)
+#library(AnnotationHub)
 
 args = commandArgs(TRUE)
 
 data_file = args[1]
 rmsk_file = args[2]
-gtf_file = args[3]
-min_cutoff = as.numeric(args[4])
-output_directory = args[5]
+#gtf_file = args[3]
+min_cutoff = as.numeric(args[3])
+output_directory = args[4]
 
 n_cores <- as.integer(Sys.getenv("NSLOTS"))
 if (is.na(n_cores)) n_cores <- 1
@@ -31,15 +31,11 @@ subject = makeGRangesFromDataFrame(LTR, keep.extra.columns = TRUE)
 end(subject[strand(subject) == '+']) = end(subject[strand(subject) == '+']) + 200
 start(subject[strand(subject) == '-']) = start(subject[strand(subject) == '-']) - 200
 
-print("Importing transcriptome...")
+#print("Importing transcriptome...")
 
-GTF = rtracklayer::import(gtf_file)
-exons_df = GTF[GTF$type == "exon"]
-transcriptome_background = GenomicRanges::reduce(exons_df)
-
-#ah = AnnotationHub()
-#edb = ah[["AH75036"]]
-#transcriptome_background = GenomicRanges::reduce(transcripts(edb))
+#GTF = rtracklayer::import(gtf_file)
+#exons_df = GTF[GTF$type == "exon"]
+#transcriptome_background = GenomicRanges::reduce(exons_df)
 
 # Permutation analysis 
 
@@ -70,7 +66,7 @@ for (cutoff in cutoffs){
 
 	query_sub = makeGRangesFromDataFrame(data_sub, keep.extra.columns = TRUE)
 
-	perm = overlapPermTest(mc.cores = n_cores, alternative = "greater", A = subject, B = query_sub, ntimes = 100, genome = 'mm10', universe=transcriptome_background)
+	perm = overlapPermTest(mc.cores = n_cores, alternative = "greater", A = subject, B = query_sub, ntimes = 100, genome = 'mm10')
 
 	perm_results = perm$numOverlaps
 
