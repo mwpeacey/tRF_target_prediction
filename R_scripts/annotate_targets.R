@@ -17,9 +17,9 @@ library(AnnotationHub)
 
 # Load data
 
-data = read.csv(file = 'import/miranda/miranda_output_90.csv', header = TRUE) %>%
+data = read.csv(file = 'import/miranda/miranda_output_60.csv', header = TRUE) %>%
   dplyr::rename(start = genomic_start, end = genomic_end) %>%
-  dplyr::filter(alignment_score >= 90)
+  dplyr::filter(alignment_score >= 75)
 
 # Add tRF information
 
@@ -76,7 +76,7 @@ mcols(gr_exon_tx)$tx_id = rep(names(gr_exonsByTx),
 
 # 2) map each hit to any overlapping exon → transcript
 mcols(gr_hits)$hit_idx = seq_along(gr_hits)
-ex_ol = findOverlaps(gr_hits, gr_exon_tx, type="any")
+ex_ol = findOverlaps(gr_hits, gr_exon_tx, type="within")
 
 tx_map = tibble(
   hit_idx    = mcols(gr_hits)$hit_idx[queryHits(ex_ol)],
@@ -242,6 +242,28 @@ data = dplyr::mutate(data, position_relative_to_ORF = case_when(is.na(ORF_ID) ~ 
 ## Collapse overlapping sites
 ################################################################################
 
+# Convert to GRanges
+gr = GRanges(
+  seqnames = data$seqnames,
+  ranges = IRanges(start = data$start, end = data$end),
+  strand = data$strand
+)
+
+# Reduce overlapping ranges (collapses all overlaps into a single range)
+reduced_gr = GenomicRanges::reduce(gr)
+
+# Optionally, get the best-scoring entry for each reduced region:
+hits = findOverlaps(reduced_gr, gr)
+
+# For each collapsed region, pick the best alignment_score hit
+library(dplyr)
+best_hits = as.data.frame(hits) %>%
+  group_by(queryHits) %>%
+  slice_max(order_by = data$alignment_score[subjectHits], n = 1, with_ties = FALSE) %>%
+  pull(subjectHits)
+
+unique_data = data[best_hits, ]
+
 unique_data = data %>%
   arrange(desc(alignment_score), energy) %>%
   group_by(seqnames, start, end, strand) %>%
@@ -257,7 +279,6 @@ write_csv(unique_data, file = 'import/miranda_output_unique_annotated.csv')
 
 data = read_csv('import/miranda_output_annotated.csv')
 unique_data = read_csv('import/miranda_output_unique_annotated.csv')
-
 
 ## Overlap 
 
@@ -375,8 +396,8 @@ plot + theme_bw() + theme(
 
 Leu_tRFs = c('tRF_76', 'tRF_77', 'tRF_78', 'tRF_79')
 
-input = dplyr::filter(unique_data, LTR == T, alignment_score >= 75, tRF %in% Leu_tRFs) %>%
-  group_by(location, LTR_family) %>%
+input = dplyr::filter(unique_data, alignment_score >= 80) %>%
+  group_by(LTR_family) %>%
   summarize(n = n())
 
 # What position in a transcript is hit? (SCAN genes)
@@ -387,7 +408,7 @@ input = dplyr::filter(unique_data, SCAN == T, alignment_score >= 75) %>%
     
 size = 0.3527778
 
-plot = ggplot(input, aes(x = location, y = n, fill = LTR_family)) +
+plot = ggplot(input, aes(x = LTR_family, y = n)) +
   geom_bar(stat='identity', width = 0.75) +
   xlab('Target site location') +
   ylab('# of target sites') +
@@ -428,5 +449,32 @@ input = dplyr::select(input, -c('LTR_family'))
 pheatmap(input, cluster_col = T, cluster_row = T, scale = 'row', color = my_palette)
 
 pheatmap(input, cluster_col = T, cluster_row = T)
+
+# Upset plot
+
+library(ComplexUpset)
+
+input = unique_data 
+
+groups = c('transcript', 'LTR')
+
+upset(input, groups, name='group', width_ratio=0.1)
+
+# Funnell
+
+fig <- plot_ly(
+  type = "funnelarea",
+  values = c(nrow(dplyr::filter(unique_data, alignment_score >= 80)), 
+             nrow(dplyr::filter(unique_data, alignment_score >= 80, LTR == T)), 
+             nrow(dplyr::filter(unique_data, alignment_score >= 80, LTR == T, !is.na(transcript))), 
+             nrow(dplyr::filter(unique_data, alignment_score >= 80, LTR == T, !is.na(transcript), location == "Exon - 5' UTR"))),
+  text = c("The 1st","The 2nd", "The 3rd", "The 4th"),
+  marker = list(colors = c("deepskyblue", "lightsalmon", "tan", "teal"),
+                line = list(color = c("wheat", "wheat", "blue", "wheat", width = c(0, 1, 5, 0))),
+  textfont = list(family = "Old Standard TT, serif", size = 13, color = "black"),
+  opacity = 0.65))
+
+fig
+
 
 
