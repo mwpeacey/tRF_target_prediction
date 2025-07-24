@@ -41,7 +41,7 @@ if [ ${RUN_MODE} == 'tRF' ]; then
 	miranda temp_${sRNA}.fasta \
 	${GENOME_FASTA} \
         -out result_${sRNA}_plus \
-        -sc 60.0 -en -10.0 -scale 1.0 -loose
+        -sc 70.0 -en 0 -scale 1.0 -loose
 
 fi
 
@@ -56,7 +56,7 @@ if [ ${RUN_MODE} == 'tRF' ]; then
         miranda temp_${sRNA}.fasta \
         ${MINUS_FA} \
         -out result_${sRNA}_minus \
-        -sc 90.0 -en -20.0 -scale 1.0 -loose
+        -sc 70.0 -en 0 -scale 1.0 -loose
 
 fi
 
