@@ -62,6 +62,7 @@ miranda_output = data %>%
                 'target_position' = V7,
                 'alignment_length' = V8,
                 'strand' = V11) %>% 
+  dplyr::mutate(alignment_score = as.numeric(alignment_score)) %>%
   dplyr::filter(alignment_score >= score_cutoff)
 
 # Find start and end positions of the hit in the window
@@ -127,6 +128,8 @@ write_csv(miranda_output, file = glue('{output_directory}/miranda_output_{score_
 miranda_bed = miranda_output %>%
   dplyr::select(c('seqnames', 'genomic_start', 'genomic_end', 'tRF', 'strand', 'alignment_score')) %>%
   dplyr::rename(chrom = 'seqnames', chromStart = 'genomic_start', chromEnd = 'genomic_end', name = 'tRF', score = 'alignment_score')
+#  dplyr::mutate(score = as.numeric(score))
+#  dplyr::filter(!is.na(score))
 
 rtracklayer::export.bed(con = glue("{output_directory}/miranda_output_{score_cutoff}.bed"), 
                         object = GenomicRanges::makeGRangesFromDataFrame(miranda_bed, keep.extra.columns = T),

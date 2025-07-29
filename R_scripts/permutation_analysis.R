@@ -18,13 +18,19 @@ if (is.na(n_cores)) n_cores <- 1
 
 print("Importing miRanda output...")
 
-data = read.csv(file = data_file, header = TRUE) %>%
-  dplyr::filter(alignment_score >= min_cutoff)
+data = read.csv(file = data_file, header = TRUE)
+print(colnames(data))
+
+data = dplyr::filter(data, alignment_score >= min_cutoff)
+
+
 
 print("Importing RepeatMasker annotation..")
 
 LTR = rtracklayer::readGFF(file = rmsk_file) %>%
   dplyr::filter(class_id == 'LTR')
+
+LTR = LTR[!grepl('int', LTR$gene_id),]
 
 subject = makeGRangesFromDataFrame(LTR, keep.extra.columns = TRUE)
 
