@@ -11,6 +11,10 @@ library(glue)
 library(GenomicFeatures)
 library(pheatmap)
 library(AnnotationHub)
+library(GenomicScores)
+
+#data = read_csv('import/miranda/miranda_output_annotated.csv')
+#unique_data = read_csv('import/miranda/miranda_output_unique_annotated.csv')
 
 ################################################################################
 ## Import data
@@ -18,9 +22,12 @@ library(AnnotationHub)
 
 # Load data
 
-data = read.csv(file = 'import/miranda/miranda_output_60.csv', header = TRUE) %>%
+canonical_chromosomes = paste0("chr", c(1:19, "X", "Y"))
+
+data = read.csv(file = 'import/miranda/miranda_output_70.csv', header = TRUE) %>%
   dplyr::rename(start = genomic_start, end = genomic_end) %>%
-  dplyr::filter(alignment_score >= 75)
+  dplyr::filter(alignment_score >= 70) %>%
+  dplyr::filter(seqnames %in% canonical_chromosomes)
 
 # Add tRF information
 
@@ -112,7 +119,7 @@ data <- data %>%
   ) %>%
   dplyr::rename(gencode_transcripts = transcript) %>%
   dplyr::select(
-    tRF, seqnames, alignment_score, energy,
+    tRF, seqnames, alignment_score, energy, tRNA_anticodon,
     start, end, alignment_length,
     strand, gencode_location, gencode_transcripts
   )
@@ -217,7 +224,7 @@ cds_df$tx_id <- splicings_df$tx_id[queryHits(hits)]
 cds_df$exon_rank <- splicings_df$exon_rank[queryHits(hits)]
 
 cds_df <- cds_df %>%
-  rename(cds_start = start, cds_end = end)
+  dplyr::rename(cds_start = start, cds_end = end)
 
 # Collapse overlapping CDS fragments per exon
 cds_df_collapsed <- cds_df %>%
@@ -304,7 +311,7 @@ data <- data %>%
   ) %>%
   dplyr::rename(stringtie_transcripts = transcript) %>%
   dplyr::select(
-    tRF, seqnames, alignment_score, energy,
+    tRF, seqnames, alignment_score, energy, tRNA_anticodon,
     start, end, alignment_length,
     strand, gencode_location, gencode_transcripts,
     stringtie_location, stringtie_transcripts
@@ -314,70 +321,64 @@ data <- data %>%
 ## Annotate hit overlap with repeats
 ################################################################################
 
-# Create GRanges object for LTRs
-
-LTR = rtracklayer::readGFF(file = 'import/annotation_tables/mm10_rmsk_TE.gtf') %>%
+# Load and filter LTR annotation
+LTR = rtracklayer::readGFF('import/annotation_tables/mm10_rmsk_TE.gtf') %>%
   dplyr::filter(class_id == 'LTR')
 
+LTR = LTR[!grepl('int', LTR$gene_id),]
+
+# Extend LTR elements by 200bp downstream
 subject = makeGRangesFromDataFrame(LTR, keep.extra.columns = TRUE)
 end(subject[strand(subject) == '+']) = end(subject[strand(subject) == '+']) + 200
 start(subject[strand(subject) == '-']) = start(subject[strand(subject) == '-']) - 200
 
-# Create GRanges object for query data
-
+# Query object from your data
 query = GRanges(data)
 
-# Find overlaps between query and LTRs
+# Find overlaps
+hits = findOverlaps(query, subject, type = 'any', ignore.strand = TRUE)
+hits_df = as.data.frame(hits)
 
-LTR_overlap = findOverlaps(query = query, subject = subject, type = 'any', ignore.strand = T)
-LTR_overlap = as.data.frame(LTR_overlap)
+# Extract the overlapping metadata
+matched_LTR = subject[hits_df$subjectHits]
+overlap_info = data.frame(
+  queryHits = hits_df$queryHits,
+  LTR_family = mcols(matched_LTR)$family_id,
+  LTR_gene_id = mcols(matched_LTR)$gene_id
+)
 
-# Add LTR indicator to data
+# Keep only the first match per query (or you can customize to collapse all hits)
+overlap_info = overlap_info[!duplicated(overlap_info$queryHits), ]
 
+# Add LTR columns to main data
 data = data %>%
-  dplyr::mutate(LTR = dplyr::row_number() %in% LTR_overlap$queryHits)
+  dplyr::mutate(row_id = row_number()) %>%
+  left_join(overlap_info, by = c("row_id" = "queryHits")) %>%
+  dplyr::mutate(LTR = !is.na(LTR_family)) %>%
+  dplyr::select(-row_id)  # clean up temporary column
 
-# Initialize LTR family vector
-LTR_family = vector(length = nrow(data))
-
-# Assign LTR family based on overlaps
-for (row in 1:nrow(data)) {
-  if (data[row, 'LTR']) {
-    subject_row = LTR_overlap$subjectHits[LTR_overlap$queryHits == row][1]
-    LTR_family[row] = subject[subject_row,]$family_id
-  } else {
-    LTR_family[row] = NA
-  }
-}
-
-data$LTR_family = LTR_family
 
 ################################################################################
-## Annotate overlap with chimeric transcripts 
+## Annotate target site hits with phast con scores
 ################################################################################
 
-# Read chimeras
-chimeras = read_csv('~/Downloads/Oomen_chimeras.csv') %>%
-  separate(TE_position, sep = ':', into = c('seqnames', 'position')) %>%
-  separate(position, sep = '-', into = c('start', 'end')) %>%
-  dplyr::select(c('TE_strand', 'seqnames', 'start', 'end')) %>%
-  dplyr::rename(strand = 'TE_strand')
+phastCons = getGScores("phastCons60way.UCSC.mm10")
 
-# Create GRanges object 
-subject = makeGRangesFromDataFrame(chimeras, keep.extra.columns = TRUE)
-seqlevelsStyle(subject) = 'NCBI'
+gr_hits = makeGRangesFromDataFrame(
+  data,
+  seqnames.field   = "seqnames",
+  start.field      = "start",
+  end.field        = "end",
+  strand.field     = "strand",
+  keep.extra.columns = TRUE
+)
 
-# Create GRanges object for query data
-query = GRanges(data)
-seqlevelsStyle(query) = 'NCBI'
+scores = gscores(phastCons, gr_hits)
 
-# Find overlaps between query and subject
-chimera_overlap = findOverlaps(query = query, subject = subject, type = 'within', ignore.strand = T)
-chimera_overlap = as.data.frame(chimera_overlap)
+mcols(scores)$phastCons_mean = mcols(scores)$default
+mcols(scores)$default = NULL
 
-# Add chimera indicator to data
-data = data %>%
-  dplyr::mutate(chimera = seq_len(n()) %in% chimera_overlap$queryHits)
+data = as.data.frame(scores)
 
 ################################################################################
 ## Collapse overlapping sites
@@ -390,36 +391,35 @@ gr = GRanges(
   strand = data$strand
 )
 
-# Reduce overlapping ranges (collapses all overlaps into a single range)
-reduced_gr = GenomicRanges::reduce(gr)
+# Reduce overlapping ranges
+reduced_gr = reduce(gr)
 
-# Optionally, get the best-scoring entry for each reduced region:
+# Find overlaps
 hits = findOverlaps(reduced_gr, gr)
+hits_df = as.data.frame(hits)
 
-# For each collapsed region, pick the best alignment_score hit
-library(dplyr)
-best_hits = as.data.frame(hits) %>%
+# Count how many original ranges map to each reduced range
+tRF_counts = hits_df %>%
   group_by(queryHits) %>%
-  slice_max(order_by = data$alignment_score[subjectHits], n = 1, with_ties = FALSE) %>%
-  pull(subjectHits)
+  summarise(collapsed_tRF_count = n(), .groups = "drop")
 
-unique_data = data[best_hits, ]
+# Pick the best hit for each reduced range
+best_hits = hits_df %>%
+  group_by(queryHits) %>%
+  slice_max(order_by = data$alignment_score[subjectHits], n = 1, with_ties = FALSE)
 
-unique_data = data %>%
-  arrange(desc(alignment_score), energy) %>%
-  group_by(seqnames, start, end, strand) %>%
-  dplyr::slice(1) %>%
-  ungroup()
+# Extract best original rows
+unique_data = data[best_hits$subjectHits, ]
+
+# Add the tRF count to unique_data
+unique_data$collapsed_tRF_count = tRF_counts$collapsed_tRF_count[match(best_hits$queryHits, tRF_counts$queryHits)]
 
 ################################################################################
 ## Export
 ################################################################################
 
-write_csv(data, file = 'import/miranda_output_annotated.csv')
-write_csv(unique_data, file = 'import/miranda_output_unique_annotated.csv')
-
-data = read_csv('import/miranda_output_annotated.csv')
-unique_data = read_csv('import/miranda_output_unique_annotated.csv')
+write_csv(data, file = 'import/miranda/miranda_output_annotated.csv')
+write_csv(unique_data, file = 'import/miranda/miranda_output_unique_annotated.csv')
 
 ## Overlap 
 
@@ -438,184 +438,3 @@ unique_data  = unique_data %>%
   dplyr::mutate(AGO_peak = dplyr::row_number() %in% overlap$queryHits)
 
 df = dplyr::filter(unique_data, AGO_peak == T, LTR == T)
-
-################################################################################
-## Plots
-################################################################################
-
-library(patchwork)
-library(tidyverse)
-
-# Distribution of alignment scores
-
-input = dplyr::filter(unique_data, alignment_score >= 70) %>%
-  group_by(location) %>%
-  summarize(n = n())
-
-size = 1
-
-permutation_analysis = read_csv(file = 'import/LTR_enrichment_by_cutoff.csv')
-permutation_analysis$padj = p.adjust(permutation_analysis$p_value, method = "BH")
-
-cutoff = 80
-
-n = nrow(dplyr::filter(unique_data, alignment_score >= cutoff, LTR == T))
-
-# Histogram
-hist_plot = ggplot(unique_data, aes(x = alignment_score)) +
-  geom_histogram(fill = '#7AAFD3', color = 'black', binwidth = 1, boundary = 0) +
-  geom_vline(xintercept = 80, linetype = 'dashed') +
-  coord_cartesian(xlim = c(74, 90)) +
-  scale_y_continuous(limits = c(0, 25000),
-                     expand = expansion(mult = c(0, .1))) +
-  xlab('Alignment score') +
-  ylab('Count') +
-  annotate("text", x = 85, y = 20000, 
-           label = paste0("n = ", n, "\n(score ≥ 80)"), 
-           hjust = 1, size = 5) +
-  theme_bw() + theme(
-    axis.text.x = element_text(size = 14, color = 'black'),
-    axis.text.y = element_text(size = 14, color = 'black'),
-    axis.title.x = element_blank(),
-    axis.title.y.left = element_text(size = 16, margin = margin(r = 7)),
-    axis.line = element_line(size = size),
-    axis.ticks = element_line(size = size, color = 'black'),
-    panel.border = element_blank(),
-    legend.position = "none",
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    strip.text.x = element_text(size = 14, face = "bold"),
-    strip.background = element_rect(color = "white", fill = "white", size = 1.5, linetype = "solid"), 
-    plot.title = element_text(hjust = 0.5, size = 10)
-  )
-
-# Z-score line
-z_plot = ggplot(permutation_analysis, aes(x = cutoff, y = z_score)) +
-  geom_line(color = 'firebrick', size = 1) +
-  geom_vline(xintercept = 80, linetype = 'dashed') +
-  coord_cartesian(xlim = c(74, 90)) +
-  xlab('Alignment score') +
-  ylab('Z-score (LTR enrichment)') +
-  theme_bw() + theme(
-    axis.text.x = element_text(size = 14, color = 'black'),
-    axis.text.y = element_text(size = 14, color = 'black'),
-    axis.title.x = element_text(size = 16, margin = margin(t = 7)),
-    axis.title.y.left = element_text(size = 16, margin = margin(r = 7)),
-    axis.title.y.right = element_text(size = 16, margin = margin(l = 7)),
-    axis.line = element_line(size = size),
-    axis.ticks = element_line(size = size, color = 'black'),
-    panel.border = element_blank(),
-    legend.position = "none",
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    strip.text.x = element_text(size = 14, face = "bold"),
-    strip.background = element_rect(color = "white", fill = "white", size = 1.5, linetype = "solid"), 
-    plot.title = element_text(hjust = 0.5, size = 10)
-  )
-
-# Combine them
-plot = hist_plot / z_plot + plot_layout(heights = c(2, 1))
-
-plot + theme_bw() + theme(
-  axis.text.x = element_text(size = 14, color = 'black'),
-  axis.text.y = element_text(size = 14, color = 'black'),
-  axis.title.x = element_text(size = 16, margin = margin(t = 7)),
-  axis.title.y.left = element_text(size = 16, margin = margin(r = 7)),
-  axis.title.y.right = element_text(size = 16, margin = margin(l = 7)),
-  axis.line = element_line(size = size),
-  axis.ticks = element_line(size = size, color = 'black'),
-  panel.border = element_blank(),
-  legend.position = "none",
-  panel.grid.major = element_blank(),
-  panel.grid.minor = element_blank(),
-  strip.text.x = element_text(size = 14, face = "bold"),
-  strip.background = element_rect(color = "white", fill = "white", size = 1.5, linetype = "solid"), 
-  plot.title = element_text(hjust = 0.5, size = 10)
-)
-
-# What position in a transcript is hit? (LTRs)
-
-Leu_tRFs = c('tRF_76', 'tRF_77', 'tRF_78', 'tRF_79')
-
-input = dplyr::filter(unique_data, alignment_score >= 80) %>%
-  group_by(LTR_family) %>%
-  summarize(n = n())
-
-# What position in a transcript is hit? (SCAN genes)
-
-input = dplyr::filter(unique_data, SCAN == T, alignment_score >= 75) %>%
-  group_by(location) %>%
-  summarize(n = n())
-    
-size = 0.3527778
-
-plot = ggplot(input, aes(x = LTR_family, y = n)) +
-  geom_bar(stat='identity', width = 0.75) +
-  xlab('Target site location') +
-  ylab('# of target sites') +
-  scale_y_continuous(expand = expansion(mult = c(0, .1))) +
-  geom_text(aes(label =n), vjust = -0.5, size = 2.75)
-
-plot + theme_bw() + theme(
-  axis.text.x = element_text(size = 8, color = 'black',  angle = 45, vjust = 0.5),
-  axis.text.y = element_text(size = 8, color = 'black'),
-  axis.title.x = element_blank(),
-  axis.title.y = element_text(size = 10, margin = margin(r = 5)),
-  axis.line = element_line(size = size),
-  axis.ticks = element_line(size = size, color = 'black'),
-  panel.border = element_blank(),
-  panel.grid.major = element_blank(),
-  panel.grid.minor = element_blank(),
-  strip.text.x = element_text(size = 14, face = "bold"),
-  strip.background = element_rect(color = "white", fill = "white", size = 1.5, linetype = "solid"), 
-  plot.title = element_text(hjust = 0.5, size = 10)
-)
-
-# Heatmap 
-
-input = dplyr::filter(unique_data, LTR == T, LTR_family != 'LTR', alignment_score >= 75) %>%
-  group_by(tRNA_anticodon, LTR_family) %>%
-  summarize(n = n()) %>%
-  pivot_wider(names_from = 'tRNA_anticodon', values_from = 'n') %>%
-  as.data.frame()
-
-my_palette = colorRampPalette(c("#f0f0f0", "#b30000"))(100)
-
-input[is.na(input)] = 0
-
-row.names(input) = input$LTR_family
-
-input = dplyr::select(input, -c('LTR_family'))
-
-pheatmap(input, cluster_col = T, cluster_row = T, scale = 'row', color = my_palette)
-
-pheatmap(input, cluster_col = T, cluster_row = T)
-
-# Upset plot
-
-library(ComplexUpset)
-
-input = unique_data 
-
-groups = c('transcript', 'LTR')
-
-upset(input, groups, name='group', width_ratio=0.1)
-
-# Funnell
-
-fig <- plot_ly(
-  type = "funnelarea",
-  values = c(nrow(dplyr::filter(unique_data, alignment_score >= 80)), 
-             nrow(dplyr::filter(unique_data, alignment_score >= 80, LTR == T)), 
-             nrow(dplyr::filter(unique_data, alignment_score >= 80, LTR == T, !is.na(transcript))), 
-             nrow(dplyr::filter(unique_data, alignment_score >= 80, LTR == T, !is.na(transcript), location == "Exon - 5' UTR"))),
-  text = c("The 1st","The 2nd", "The 3rd", "The 4th"),
-  marker = list(colors = c("deepskyblue", "lightsalmon", "tan", "teal"),
-                line = list(color = c("wheat", "wheat", "blue", "wheat", width = c(0, 1, 5, 0))),
-  textfont = list(family = "Old Standard TT, serif", size = 13, color = "black"),
-  opacity = 0.65))
-
-fig
-
-
-
