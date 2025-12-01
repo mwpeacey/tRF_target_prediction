@@ -1,13 +1,11 @@
 library(tidyverse)
 library(glue)
 library(regioneR)
-#library(AnnotationHub)
 
 args = commandArgs(TRUE)
 
 data_file = args[1]
 rmsk_file = args[2]
-#gtf_file = args[3]
 min_cutoff = as.numeric(args[3])
 output_directory = args[4]
 
@@ -27,21 +25,17 @@ data = dplyr::filter(data, alignment_score >= min_cutoff)
 
 print("Importing RepeatMasker annotation..")
 
-LTR = rtracklayer::readGFF(file = rmsk_file) %>%
-  dplyr::filter(class_id == 'LTR')
+LTR = read.csv(rmsk_file, header = T)
+LTR = LTR[!grepl('int', LTR$repName),]
 
-LTR = LTR[!grepl('int', LTR$gene_id),]
-
-subject = makeGRangesFromDataFrame(LTR, keep.extra.columns = TRUE)
+subject = makeGRangesFromDataFrame(LTR, 
+                                   keep.extra.columns = TRUE,
+                                   start.field = 'genoStart',
+                                   end.field = 'genoEnd',
+                                   seqnames.field = 'genoName')
 
 end(subject[strand(subject) == '+']) = end(subject[strand(subject) == '+']) + 200
 start(subject[strand(subject) == '-']) = start(subject[strand(subject) == '-']) - 200
-
-#print("Importing transcriptome...")
-
-#GTF = rtracklayer::import(gtf_file)
-#exons_df = GTF[GTF$type == "exon"]
-#transcriptome_background = GenomicRanges::reduce(exons_df)
 
 # Permutation analysis 
 
