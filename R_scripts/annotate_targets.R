@@ -12,9 +12,10 @@ library(GenomicFeatures)
 library(pheatmap)
 library(AnnotationHub)
 library(GenomicScores)
+library(DESeq2)
 
-#data = read_csv('import/miranda/miranda_output_annotated.csv')
-#unique_data = read_csv('import/miranda/miranda_output_unique_annotated.csv')
+data = read_csv('import/miranda/miranda_output_annotated.csv')
+unique_data = read_csv('import/miranda/miranda_output_unique_annotated.csv')
 
 ################################################################################
 ## Import data
@@ -378,11 +379,12 @@ mcols(gr_hits)$hit_idx = seq_along(gr_hits)
 ex_ol = findOverlaps(gr_hits, gr_exon_tx, type="within")
 
 tx_map = tibble(
-  hit_idx    = mcols(gr_hits)$hit_idx[queryHits(ex_ol)],
-  transcript = mcols(gr_exon_tx)$tx_id[subjectHits(ex_ol)]
+  hit_idx = mcols(gr_hits)$hit_idx[queryHits(ex_ol)],
+  tx_id   = as.integer(mcols(gr_exon_tx)$tx_id[subjectHits(ex_ol)])  
 ) %>%
+  left_join(transcripts_df %>% dplyr::select(tx_id, tx_name), by = "tx_id") %>%
   group_by(hit_idx) %>%
-  summarize(transcript = paste(unique(transcript), collapse = ";"), .groups="drop")
+  summarize(transcript = paste(unique(tx_name), collapse = ";"), .groups = "drop")
 
 # 3) Build your logical annotations as before
 annot = tibble(
@@ -397,9 +399,27 @@ annot = tibble(
 annot = annot %>%
   left_join(tx_map, by="hit_idx")
 
-data <- data %>%
+# Extract blast match per hit if any overlapping transcript matches ORF target_id
+orf_match_table = open_reading_frames_annotated_filtered %>%
+  dplyr::select(target_id, blast_match)
+
+# Join transcript IDs to ORF matches
+tx_to_protein = tx_map %>%
+  separate_rows(transcript, sep = ";") %>%
+  dplyr::mutate(tx_id = as.integer(transcript)) %>%
+  left_join(transcripts_df %>% dplyr::select(tx_id, tx_name), by = "tx_id") %>%
+  left_join(open_reading_frames_annotated_filtered %>% dplyr::select(target_id, blast_match),
+            by = c("tx_name" = "target_id")) %>%
+  dplyr::filter(!is.na(blast_match)) %>%
+  group_by(hit_idx) %>%
+  summarize(blast_match = paste(unique(blast_match), collapse = ";"), .groups = "drop")
+
+data$hit_idx = seq_len(nrow(data))
+
+data = data %>%
   bind_cols(annot %>% dplyr::select(-hit_idx)) %>%
-  mutate(
+  left_join(tx_to_protein, by = "hit_idx") %>%
+  dplyr::mutate(
     stringtie_location = case_when(
       overlaps_5utr ~ "Exon - 5' UTR",
       overlaps_3utr ~ "Exon - 3' UTR",
@@ -410,7 +430,7 @@ data <- data %>%
   ) %>%
   dplyr::rename(stringtie_transcripts = transcript) %>%
   dplyr::select(-c('overlaps_5utr', 'overlaps_3utr', 'overlaps_cds',
-                   'overlaps_exon'))
+                   'overlaps_exon', 'hit_idx'))
 
 ################################################################################
 ## Annotate target site hits with phast con scores
@@ -433,6 +453,87 @@ mcols(scores)$phastCons_mean = mcols(scores)$default
 mcols(scores)$default = NULL
 
 data = as.data.frame(scores)
+
+################################################################################
+## Annotate DE in Schaefer et al 
+################################################################################
+
+library(DESeq2)
+
+# Data import
+
+filenames = list.files('~/RNA-seq/Schaefer_2022/', pattern="*.txt", full.names=TRUE)
+
+raw_counts = filenames %>%
+  map(~ read_table(.x) %>% rename_all(tolower)) %>%
+  purrr::reduce(full_join, by = "geneid")
+
+samples = tibble(sample = colnames(raw_counts %>% dplyr::select(-geneid)), 
+                 genotype = c('wt', 'wt', 'dicer', 'dicer', 'ago', 'ago', 'drosha', 'drosha'))
+
+# DEseq2
+
+input = raw_counts %>%
+  dplyr::select(-geneid) %>%
+  mutate_all(~replace(., is.na(.), 0))
+
+rownames(input) = raw_counts$geneid
+
+# Create DESeq2 dataset
+dds = DESeqDataSetFromMatrix(countData = input, 
+                             colData = samples, 
+                             design = ~genotype)
+
+# Run DESeq and filter low-count genes
+dds = DESeq(dds)
+dds = dds[rowSums(counts(dds)) >= 1, ]
+
+# Extract results with contrast
+
+counter = 1
+for (condition in unique(samples$genotype)){
+  
+  if (condition != 'wt'){
+    
+    print(glue('Comparing wt to {condition}...'))
+    
+    results = results(dds, contrast = c('genotype', condition, 'wt'), independentFiltering = TRUE)
+    
+    temp_results_df = as.data.frame(results)
+    
+    temp_results_df$condition = condition
+    temp_results_df$geneid = rownames(temp_results_df)
+    
+    if (counter == 1){
+      
+      results_df = temp_results_df
+      
+    }
+    
+    else{
+      
+      results_df = bind_rows(results_df, temp_results_df)
+      
+    }
+    
+    counter = counter + 1
+    
+    rm(temp_results_df)
+    
+  }
+  
+}
+
+results_df = dplyr::rename(results_df, genotype = condition, gene = geneid)
+
+data = dplyr::mutate(data, AGO = case_when(gencode_gene_id %in% dplyr::filter(results_df, genotype == 'ago', padj <= 0.1, log2FoldChange > 0.5)$gene ~ T,
+                                    T ~ F))
+
+data = dplyr::mutate(data, DROSHA = case_when(gencode_gene_id %in% dplyr::filter(results_df, genotype == 'drosha', padj <= 0.1, log2FoldChange > 0.5)$gene ~ T,
+                                           T ~ F))
+
+data = dplyr::mutate(data, DICER = case_when(gencode_gene_id %in% dplyr::filter(results_df, genotype == 'dicer', padj <= 0.1, log2FoldChange > 0.5)$gene ~ T,
+                                              T ~ F))
 
 ################################################################################
 ## Collapse overlapping sites
@@ -582,3 +683,20 @@ unique_data  = unique_data %>%
   dplyr::mutate(AGO_peak = dplyr::row_number() %in% overlap$queryHits)
 
 df = dplyr::filter(unique_data, AGO_peak == T, LTR == T)
+
+## 
+
+query = GRanges(unique_data)
+
+CLIP = read.table('~/tRF_targets_new/GSE139344_AGO-CLIP/narrow_peak.combined.bed') %>%
+  dplyr::rename(seqnames = V1, start = V2, end = V3, p = V4, strand = V6)
+
+subject = GRanges(CLIP)
+
+overlap = GenomicAlignments::findOverlaps(query = query, subject = subject, type = 'any', ignore.strand = F)
+overlap = as.data.frame(overlap)
+
+unique_data  = unique_data %>%
+  dplyr::mutate(AGO_peak = dplyr::row_number() %in% overlap$queryHits)
+
+df = dplyr::filter(unique_data, AGO_peak == T, AGO == T, DROSHA == F, DICER == F, gencode_location == 'Exon - 5\' UTR')
