@@ -36,12 +36,21 @@ echo "Run mode: ${RUN_MODE}"
 
 cd ${OUTPUT_DIRECTORY}/${RUN_ID}/${sRNA}
 
+echo "Scanning plus strand on $(date)."
+
 if [ ${RUN_MODE} == 'tRF' ]; then
 
 	miranda temp_${sRNA}.fasta \
 	${GENOME_FASTA} \
         -out result_${sRNA}_plus \
         -sc 70.0 -en 0 -scale 1.0 -loose
+
+elif [ ${RUN_MODE} == 'miRNA' ]; then
+
+	miranda temp_${sRNA}.fasta \
+        ${GENOME_FASTA} \
+        -out result_${sRNA}_plus \
+        -sc 150.0 -en 0
 
 fi
 
@@ -51,12 +60,21 @@ grep -A1 "Scores for this hit:" result_${sRNA}_plus \
   | awk -v strand="+" '{ print $0 "\t" strand }' \
   > summary_${sRNA}
 
+echo "Scanning minus strand on $(date)."
+
 if [ ${RUN_MODE} == 'tRF' ]; then
 
         miranda temp_${sRNA}.fasta \
         ${MINUS_FA} \
         -out result_${sRNA}_minus \
         -sc 70.0 -en 0 -scale 1.0 -loose
+
+elif [ ${RUN_MODE} == 'miRNA' ]; then
+
+        miranda temp_${sRNA}.fasta \
+        ${MINUS_FA} \
+        -out result_${sRNA}_minus \
+        -sc 150.0 -en 0
 
 fi
 
