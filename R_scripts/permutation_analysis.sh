@@ -7,7 +7,6 @@
 
 data_file=$1
 rmsk_file=$2
-#gtf_file=$3
 min_cutoff=$3
 output_directory=$4
 
