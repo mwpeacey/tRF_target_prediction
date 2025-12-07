@@ -9,7 +9,8 @@ args = commandArgs(TRUE)
 tRF_file      = args[1]
 miRNA_file    = args[2]
 five_UTR      = args[3]
-output_directory = args[4]
+rmsk_file = args[4]
+output_directory = args[5]
 
 n_cores <- as.integer(Sys.getenv("NSLOTS"))
 if (is.na(n_cores)) n_cores <- 1
@@ -28,6 +29,33 @@ five_UTR_universe = GenomeInfoDb::keepSeqlevels(
   five_UTR_universe,
   canonical_chrs,
   pruning.mode = "coarse"
+)
+
+## Import LTRs from RepeatMasker
+print("Importing LTRs...")
+
+LTR_df = read.csv(rmsk_file, header = TRUE)
+LTR_df = LTR_df[!grepl("int", LTR_df$repName), ]
+
+ltr_gr = makeGRangesFromDataFrame(
+  LTR_df,
+  keep.extra.columns = TRUE,
+  start.field    = "genoStart",
+  end.field      = "genoEnd",
+  seqnames.field = "genoName"
+)
+
+end(ltr_gr[strand(ltr_gr) == "+"]) = end(ltr_gr[strand(ltr_gr) == "+"]) + 200
+start(ltr_gr[strand(ltr_gr) == "-"]) = start(ltr_gr[strand(ltr_gr) == "-"]) - 200
+
+ltr_gr = keepSeqlevels(ltr_gr, canonical_chrs, pruning.mode = "coarse")
+
+# Create joint universe
+
+UTR_LTR_universe = GenomicRanges::intersect(
+  five_UTR_universe,
+  ltr_gr,
+  ignore.strand = TRUE
 )
 
 # Import tRF prediction
@@ -78,9 +106,9 @@ for (tRF_cutoff in tRF_cutoffs) {
   )
 
   ## Restrict tRFs to 5' UTRs once per tRF cutoff
-  tRF_5UTR = subsetByOverlaps(tRF_data_subset_GRanges, five_UTR_universe)
+  tRF_5UTR_LTR = subsetByOverlaps(tRF_data_subset_GRanges, UTR_LTR_universe)
 
-  if (length(tRF_5UTR) == 0) {
+  if (length(tRF_5UTR_LTR) == 0) {
     message("No tRF hits in 5' UTR at cutoff ", tRF_cutoff,
             ". Terminating outer loop.")
     break
@@ -106,9 +134,9 @@ for (tRF_cutoff in tRF_cutoffs) {
     )
 
     ## Restrict miRNA hits to 5' UTRs
-    miRNA_5UTR = subsetByOverlaps(miRNA_data_subset_GRanges, five_UTR_universe)
+    miRNA_5UTR_LTR = subsetByOverlaps(miRNA_data_subset_GRanges, UTR_LTR_universe)
 
-    if (length(miRNA_5UTR) == 0) {
+    if (length(miRNA_5UTR_LTR) == 0) {
       message("  No miRNA hits in 5' UTR at cutoff ", miRNA_cutoff,
               " for tRF cutoff ", tRF_cutoff, ". Breaking inner loop.")
       break
@@ -116,14 +144,14 @@ for (tRF_cutoff in tRF_cutoffs) {
 
     ## Permutation test restricted to 5' UTR universe
     perm = permTest(
-      A                  = tRF_5UTR,
-      B                  = miRNA_5UTR,
+      A                  = tRF_5UTR_LTR,
+      B                  = miRNA_5UTR_LTR,
       ntimes             = 100,
       mc.cores           = n_cores,
       alternative        = "greater",  # or "less"/"auto"
       randomize.function = resampleRegions,
       evaluate.function  = numOverlaps,
-      universe           = five_UTR_universe
+      universe           = UTR_LTR_universe
     )
 
     # Handle permTestResultsList vs permTestResults
