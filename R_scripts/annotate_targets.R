@@ -145,13 +145,12 @@ tx_map = dplyr::tibble(
   dplyr::group_by(hit_idx) %>%
   dplyr::summarize(transcript = paste(unique(transcript), collapse = ";"), .groups = "drop")
 
-# Region type annotations
 annot = dplyr::tibble(
   hit_idx        = S4Vectors::mcols(gr_hits)$hit_idx,
-  overlaps_5utr  = IRanges::overlapsAny(gr_hits, gr_utr5),
-  overlaps_3utr  = IRanges::overlapsAny(gr_hits, gr_utr3),
-  overlaps_cds   = IRanges::overlapsAny(gr_hits, gr_cds),
-  overlaps_exon  = IRanges::overlapsAny(gr_hits, gr_exons)
+  overlaps_5utr  = IRanges::overlapsAny(gr_hits, gr_utr5, type = "within"),
+  overlaps_3utr  = IRanges::overlapsAny(gr_hits, gr_utr3, type = "within"),
+  overlaps_cds   = IRanges::overlapsAny(gr_hits, gr_cds,  type = "within"),
+  overlaps_exon  = IRanges::overlapsAny(gr_hits, gr_exons,type = "within")
 )
 
 # Join annotations
@@ -225,12 +224,10 @@ data = data %>%
 ## Annotate Gag-like genes
 ################################################################################
 
-scan_genes = read_csv('import/annotation_tables/mouse_scan_genes.csv')
-other_gag_genes = read_csv('import/annotation_tables/mouse_gag_genes.csv')
+gag_genes = read_csv('import/annotation_tables/mouse_gag_genes_new.csv')
 
-data = dplyr::mutate(data, gag_gene = case_when(gencode_gene_id %in% scan_genes$gene_id ~ T,
-                                                gencode_gene_name %in% other_gag_genes$gene_name ~ T,
-                                                 T ~ F))
+data = dplyr::mutate(data, gag_gene = case_when(gencode_gene_name %in% gag_genes$gene_name ~ T,
+                                                T ~ F))
 
 ################################################################################
 ## Annotate overlap with StringTie transcripts
@@ -378,11 +375,9 @@ gr_utr3   = threeUTRsByTranscript(txdb_custom) %>% unlist()
 gr_exonsByTx = exonsBy(txdb_custom, by="tx")
 gr_exon_tx <- unlist(gr_exonsByTx)
 
-# capture the transcript ID in a metadata column
 mcols(gr_exon_tx)$tx_id = rep(names(gr_exonsByTx),
                               elementNROWS(gr_exonsByTx))
 
-# 2) map each hit to any overlapping exon → transcript
 mcols(gr_hits)$hit_idx = seq_along(gr_hits)
 ex_ol = findOverlaps(gr_hits, gr_exon_tx, type="within")
 
@@ -394,24 +389,20 @@ tx_map = tibble(
   group_by(hit_idx) %>%
   summarize(transcript = paste(unique(tx_name), collapse = ";"), .groups = "drop")
 
-# 3) Build your logical annotations as before
 annot = tibble(
   hit_idx       = mcols(gr_hits)$hit_idx,
-  overlaps_5utr  = overlapsAny(gr_hits, gr_utr5),
-  overlaps_3utr  = overlapsAny(gr_hits, gr_utr3),
-  overlaps_cds   = overlapsAny(gr_hits, gr_cds),
-  overlaps_exon  = overlapsAny(gr_hits, gr_exons)  # unstranded exons
+  overlaps_5utr  = overlapsAny(gr_hits, gr_utr5, type = "within"),
+  overlaps_3utr  = overlapsAny(gr_hits, gr_utr3, type = "within"),
+  overlaps_cds   = overlapsAny(gr_hits, gr_cds,  type = "within"),
+  overlaps_exon  = overlapsAny(gr_hits, gr_exons,type = "within")
 )
 
-# 4) Stitch transcript names into annot, then join into your data
 annot = annot %>%
   left_join(tx_map, by="hit_idx")
 
-# Extract blast match per hit if any overlapping transcript matches ORF target_id
 orf_match_table = open_reading_frames_annotated_filtered %>%
   dplyr::select(target_id, blast_match)
 
-# Join transcript IDs to ORF matches
 tx_to_protein = tx_map %>%
   separate_rows(transcript, sep = ";") %>%
   dplyr::mutate(tx_id = as.integer(transcript)) %>%
@@ -569,3 +560,7 @@ unique_data = as.data.frame(gr_hits)
 
 write_csv(data, file = 'import/miranda/miranda_output_annotated.csv')
 write_csv(unique_data, file = 'import/miranda/miranda_output_unique_annotated.csv')
+
+imprinted_genes = c('Rtl1', 'Rasgrf1', 'Impact', 'Slc38a4', 'Kcnq1ot1', 'Mest', 'Snrpn', 'Cdh15')
+
+view(dplyr::filter(unique_data, gencode_gene_name %in% imprinted_genes))
