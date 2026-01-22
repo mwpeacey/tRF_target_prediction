@@ -5,14 +5,16 @@
 #$ -o permutation_analysis_output.txt
 #$ -e permutation_analysis_output.txt
 
-data_file=$1
-rmsk_file=$2
-min_cutoff=$3
-output_directory=$4
+tRF_file=$1
+miRNA_file=$2
+five_UTR=$3
+rmsk_file=$4
+output_directory=$5
 
 module load EBModules
 module load R-bundle-Bioconductor/3.14-foss-2021b-R-4.1.2
 
-Rscript /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/R_scripts/permutation_analysis.R ${data_file} ${rmsk_file} ${min_cutoff} ${output_directory}
+Rscript /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/R_scripts/permutation_analysis_miRNA.R \
+	${tRF_file} ${miRNA_file} ${five_UTR} ${rmsk_file} ${output_directory}
 
 mv permutation_analysis_output.txt ${output_directory}
