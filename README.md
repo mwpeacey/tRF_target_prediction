@@ -1,5 +1,8 @@
 # tRF target prediction
-A pipeline for the prediction of 22nt 3' tRNA fragment (3'-tRF) targets in the mouse genome, with a focus on target sites derived from the primer binding site of LTR-retrotransposons.
+[![bioRxiv](https://img.shields.io/badge/bioRxiv-10.64898%2F2026.01.22.698655-B31B1B.svg)](https://doi.org/10.64898/2026.01.22.698655)
+[![DOI](https://zenodo.org/badge/927843426.svg)](https://doi.org/10.5281/zenodo.18601740)
+
+A pipeline for the prediction of 22nt 3' tRNA fragment (3'-tRF) targets in the mouse genome, with a focus on target sites derived from the primer binding site of LTR-retrotransposons. Associated with the bioRxiv preprint 10.64898/2026.01.22.698655v1
 
 To recover target sites in novel LTR-retrotransposon derived transcripts, a transcriptome is assembled from RNA-seq data from the early embryo. Scripts for transcriptome assembly are adapted from Modzelewski et al 2021 (https://epigenome.wustl.edu/TE_Transcript_Assembly/tool.html).
 
