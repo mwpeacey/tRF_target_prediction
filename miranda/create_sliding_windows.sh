@@ -1,9 +1,10 @@
 #!/bin/bash
-#$ -cwd
-#$ -pe threads 1
-#$ -l m_mem_free=16G
-#$ -o create_sliding_windows_output.txt
-#$ -e create_sliding_windows_output.txt
+#SBATCH --job-name=sliding_windows
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=16G
+#SBATCH --time=48:00:00
+#SBATCH --output=create_sliding_windows_output.txt
+#SBATCH --error=create_sliding_windows_output.txt
 
 ## Description
 ## Takes a genome fasta and splits it into sliding windows, for input into miRanda.

@@ -1,9 +1,10 @@
 #!/bin/bash
-#$ -cwd
-#$ -pe threads 1
-#$ -l m_mem_free=16G
-#$ -o gather_summaries_output.txt
-#$ -e gather_summaries_output.txt
+#SBATCH --job-name=gather_summaries
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=16G
+#SBATCH --time=48:00:00
+#SBATCH --output=gather_summaries_output.txt
+#SBATCH --error=gather_summaries_output.txt
 
 ## Description
 ## After miRanda has run, this script gathers summary files into one output folder.

@@ -1,9 +1,10 @@
 #!/bin/bash
-#$ -cwd
-#$ -pe threads 1
-#$ -l m_mem_free=32G
-#$ -o miranda_to_bed_output.txt
-#$ -e miranda_to_bed_output.txt
+#SBATCH --job-name=miranda_to_bed
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=32G
+#SBATCH --time=48:00:00
+#SBATCH --output=miranda_to_bed_output.txt
+#SBATCH --error=miranda_to_bed_output.txt
 
 summary_directory=$1
 output_directory=$2

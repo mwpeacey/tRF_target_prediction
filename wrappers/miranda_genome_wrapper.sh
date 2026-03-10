@@ -1,10 +1,10 @@
 #!/bin/bash
-#$ -cwd
-#$ -pe threads 1
-#$ -l m_mem_free=4G
-#$ -N miranda_wrapper
-#$ -o miranda_wrapper_output.txt
-#$ -e miranda_wrapper_output.txt
+#SBATCH --job-name=miranda_wrapper
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=4G
+#SBATCH --time=48:00:00
+#SBATCH --output=miranda_wrapper_output.txt
+#SBATCH --error=miranda_wrapper_output.txt
 
 ## Description
 ## Uses miRanda to predict tRF or miRNA targets in an input transcriptome.
@@ -70,12 +70,12 @@ for sRNA in $(cat sRNA_list.txt); do
 	cd ${sRNA}
 
 	cat ${SMALL_RNA_FASTA} | sed -n "/${sRNA}/,/>/p" | head -2 > temp_${sRNA}.fasta
-
-	qsub -N ${RUN_ID}_${sRNA}_miranda \
-	-o ${OUTPUT_DIRECTORY}/${RUN_ID}/${sRNA}/${RUN_ID}_${sRNA}_miranda_output.txt \
-	-e ${OUTPUT_DIRECTORY}/${RUN_ID}/${sRNA}/${RUN_ID}_${sRNA}_miranda_output.txt \
-	${SCRIPTS}/miranda/miranda_genome.sh \
-	${GENOME_FASTA} ${RUN_ID} \
-	${sRNA} ${RUN_MODE} ${OUTPUT_DIRECTORY}
+	
+	sbatch --job-name=${RUN_ID}_${sRNA}_miranda \
+    	--output=${OUTPUT_DIRECTORY}/${RUN_ID}/${sRNA}/${RUN_ID}_${sRNA}_miranda_output.txt \
+    	--error=${OUTPUT_DIRECTORY}/${RUN_ID}/${sRNA}/${RUN_ID}_${sRNA}_miranda_output.txt \
+    	${SCRIPTS}/miranda/miranda_genome.sh \
+    	${GENOME_FASTA} ${RUN_ID} \
+    	${sRNA} ${RUN_MODE} ${OUTPUT_DIRECTORY}	
 
 done

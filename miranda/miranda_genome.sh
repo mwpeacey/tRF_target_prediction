@@ -1,7 +1,7 @@
 #!/bin/bash
-#$ -cwd
-#$ -pe threads 1
-#$ -l m_mem_free=16G
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=16G
+#SBATCH --time=48:00:00
 
 ## Description
 ## Uses miRanda to predict tRF or miRNA targets in an input genome. Designed for use with miranda_wrapper.sh.
