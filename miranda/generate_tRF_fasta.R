@@ -8,6 +8,8 @@ library(tidyverse)
 
 #genome = 'mm10'
 genome = 'hg38'
+#genome = 'dm6'
+#genome = 'galGal7b'
 
 tRNA_fasta = Biostrings::readRNAStringSet(glue("import/{genome}-mature-tRNAs.fa"),
                                      format = 'fasta')

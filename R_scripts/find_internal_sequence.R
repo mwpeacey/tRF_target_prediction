@@ -92,4 +92,6 @@ LTR$repFamily = LTR$repFamily %>%
 
 unique(LTR[grepl("int", LTR$repName, ignore.case = TRUE), ]$repName)
 
-find_internal_sequence(LTR, "MMVL30-int")
+find_internal_sequence(LTR, "MMETn-int")
+
+find_internal_sequence(LTR, "ETnERV-int")
