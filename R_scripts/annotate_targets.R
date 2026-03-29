@@ -12,7 +12,7 @@ library(GenomicFeatures)
 library(AnnotationHub)
 
 #data = read_csv('import/miranda/miranda_output_annotated.csv')
-#unique_data = read_csv('import/miranda/miranda_output_unique_annotated.csv')
+unique_data = read_csv('import/miranda/miranda_output_unique_annotated.csv')
 
 ################################################################################
 ## Import data
@@ -561,6 +561,7 @@ unique_data = as.data.frame(gr_hits)
 write_csv(data, file = 'import/miranda/miranda_output_annotated.csv')
 write_csv(unique_data, file = 'import/miranda/miranda_output_unique_annotated.csv')
 
-imprinted_genes = c('Rtl1', 'Rasgrf1', 'Impact', 'Slc38a4', 'Kcnq1ot1', 'Mest', 'Snrpn', 'Cdh15')
+imprinted_genes = c('Rtl1', 'Rasgrf1', 'Impact', 'Slc38a4', 'Kcnq1ot1', 
+                    'Mest', 'Snrpn', 'Cdh15', 'Peg3', 'Peg10')
 
 view(dplyr::filter(unique_data, gencode_gene_name %in% imprinted_genes))

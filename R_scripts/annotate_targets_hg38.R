@@ -55,7 +55,8 @@ data = merge(data, tRF_infomation, by = 'tRF') %>%
 ################################################################################
 
 # Load and filter LTR annotation
-LTR = read.csv('import/annotation_tables/UCSC_hg38_LTR.csv', header = T)
+LTR = read.csv('import/annotation_tables/UCSC_hg38_LTR.csv', comment.char = '#', header = FALSE)
+colnames(LTR) = c('bin', 'swScore', 'milliDiv', 'milliDel', 'milliIns', 'genoName', 'genoStart', 'genoEnd', 'genoLeft', 'strand', 'repName', 'repClass', 'repFamily', 'repStart', 'repEnd', 'repLeft', 'id')
 LTR = LTR[!grepl('int', LTR$repName),]
 
 # Extend LTR elements by 200bp downstream
@@ -108,7 +109,9 @@ gr_hits = GenomicRanges::makeGRangesFromDataFrame(
 
 # Load annotation 
 ah = AnnotationHub::AnnotationHub()
-txdb = ah[["AH75036"]]
+
+query(ah, c("Homo sapiens", "EnsDb", "104"))
+txdb = ah[["AH95744"]]
 
 # Extract feature GRanges
 gr_tx    = GenomicFeatures::transcripts(txdb)
@@ -224,212 +227,10 @@ data = data %>%
 ## Annotate Gag-like genes
 ################################################################################
 
-gag_genes = read_csv('import/annotation_tables/mouse_gag_genes_new.csv')
+#gag_genes = read_csv('import/annotation_tables/mouse_gag_genes_new.csv')
 
-data = dplyr::mutate(data, gag_gene = case_when(gencode_gene_name %in% gag_genes$gene_name ~ T,
-                                                T ~ F))
-
-################################################################################
-## Annotate overlap with StringTie transcripts
-################################################################################
-
-# Import stringtie info
-
-txdb_stringtie = makeTxDbFromGFF('import/transcriptome_assembly/stringtie_merged_filtered.gtf')
-transcripts_gr = transcripts(txdb_stringtie)
-
-transcripts_df = data.frame(
-  tx_id = transcripts_gr$tx_id,
-  tx_name = transcripts_gr$tx_name,
-  tx_chrom = as.character(seqnames(transcripts_gr)),
-  tx_strand = as.character(strand(transcripts_gr)),
-  tx_start = start(transcripts_gr),
-  tx_end = end(transcripts_gr)
-)
-
-# Build "splicings" dataframe
-
-exons_by_tx = exonsBy(txdb_stringtie, by = "tx", use.names = TRUE)
-
-# Import open reading frame information 
-
-open_reading_frames = read.table('~/tRF_targets_new/mouse_embryo_tRF3b_v2/mouse_embryo_assembled_transcripts_ORFs.bed') %>%
-  dplyr::rename(target_id = V1, ORF_start = V2, ORF_end = V3, ORF_info = V4) %>%
-  tidyr::separate(ORF_info, sep = ';', into = c('ORF_ID', 'ORF_type', 'ORF_length', 'ORF_frame', 'other'))
-
-open_reading_frames$ORF_ID = stringr::str_remove(open_reading_frames$ORF_ID, 'ID=')
-open_reading_frames$ORF_type = stringr::str_remove(open_reading_frames$ORF_type, 'ORF_type=')
-open_reading_frames$ORF_length = stringr::str_remove(open_reading_frames$ORF_length, 'ORF_len=')
-open_reading_frames$ORF_frame = stringr::str_remove(open_reading_frames$ORF_frame, 'ORF_frame=')
-
-# Add blast information if present
-
-blast_output = read.csv(file = '~/tRF_targets_new/mouse_embryo_tRF3b_v2/mouse_embryo_assembled_transcripts_ORFs_blast.csv', header = F) %>%
-  dplyr::rename(ORF_ID = V1, blast_match = V2, pident = V3, length = V4, mismatch = V5, gapopen = V6, qstart = V7, qend = V8,
-                sstart = V9, send = V10, evalue = V11, bitscore = V12)
-
-open_reading_frames_annotated = merge(open_reading_frames, blast_output, by = 'ORF_ID')
-
-open_reading_frames_annotated_filtered = open_reading_frames_annotated %>%
-  group_by(target_id) %>%
-  slice_max(bitscore, with_ties = FALSE) %>%
-  ungroup()
-
-# Map ORFs to genomic coordinates
-
-orfs_tx_ranges = GRanges(
-  seqnames = open_reading_frames_annotated_filtered$target_id,
-  ranges = IRanges(
-    start = open_reading_frames_annotated_filtered$ORF_start,
-    end = open_reading_frames_annotated_filtered$ORF_end
-  ),
-  strand = open_reading_frames_annotated_filtered$V6,
-  ORF_ID = open_reading_frames_annotated_filtered$ORF_ID
-)
-
-genomic_orfs = mapFromTranscripts(orfs_tx_ranges, exons_by_tx)
-
-# Build splicings dataframe
-
-exons_flat <- unlist(exons_by_tx, use.names = FALSE)
-exons_df <- as.data.frame(exons_flat)
-exons_df$tx_name <- rep(names(exons_by_tx), lengths(exons_by_tx))
-exons_df <- left_join(exons_df, transcripts_df, by = "tx_name")
-
-splicings_df <- exons_df %>%
-  transmute(
-    tx_id = as.integer(tx_id),
-    exon_rank = as.integer(exon_rank),
-    exon_start = start,
-    exon_end = end,
-    exon_chrom = tx_chrom,
-    exon_strand = tx_strand
-  )
-
-# Genomic ORFs already in GRanges (genomic_orfs)
-orf_df <- as.data.frame(genomic_orfs)
-orf_df$ORF_ID <- mcols(orfs_tx_ranges)$ORF_ID[orf_df$transcriptsHits]  # backtrack
-
-# Create GRanges from exon coordinates
-exon_gr <- GRanges(
-  seqnames = splicings_df$exon_chrom,
-  ranges = IRanges(splicings_df$exon_start, splicings_df$exon_end),
-  strand = splicings_df$exon_strand
-)
-
-# Find overlaps between exons and CDS
-hits <- findOverlaps(exon_gr, genomic_orfs)
-
-# For each overlap, get intersection region
-cds_ranges <- pintersect(exon_gr[queryHits(hits)], genomic_orfs[subjectHits(hits)])
-
-# Extract relevant data
-cds_df <- as.data.frame(cds_ranges)
-cds_df$tx_id <- splicings_df$tx_id[queryHits(hits)]
-cds_df$exon_rank <- splicings_df$exon_rank[queryHits(hits)]
-
-cds_df <- cds_df %>%
-  dplyr::rename(cds_start = start, cds_end = end)
-
-# Collapse overlapping CDS fragments per exon
-cds_df_collapsed <- cds_df %>%
-  group_by(tx_id, exon_rank) %>%
-  summarise(
-    cds_start = min(cds_start, na.rm = TRUE),
-    cds_end = max(cds_end, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Join collapsed CDS back to splicings
-splicings_with_cds <- left_join(
-  splicings_df,
-  cds_df_collapsed,
-  by = c("tx_id", "exon_rank")
-)
-
-# Build TxDb
-
-txdb_custom = txdb_custom <- makeTxDb(
-  transcripts = transcripts_df,
-  splicings = splicings_with_cds
-)
-
-#Build GRanges of hits
-
-gr_hits = makeGRangesFromDataFrame(
-  data,
-  seqnames.field   = "seqnames",
-  start.field      = "start",
-  end.field        = "end",
-  strand.field     = "strand",
-  keep.extra.columns = TRUE
-)
-
-# Extract feature GRanges
-gr_tx     = transcripts(txdb_custom)
-gr_exons  = exons(txdb_custom)
-gr_cds    = cdsBy(txdb_custom, by="tx") %>% unlist()
-gr_utr5   = fiveUTRsByTranscript(txdb_custom) %>% unlist()
-gr_utr3   = threeUTRsByTranscript(txdb_custom) %>% unlist()
-
-gr_exonsByTx = exonsBy(txdb_custom, by="tx")
-gr_exon_tx <- unlist(gr_exonsByTx)
-
-mcols(gr_exon_tx)$tx_id = rep(names(gr_exonsByTx),
-                              elementNROWS(gr_exonsByTx))
-
-mcols(gr_hits)$hit_idx = seq_along(gr_hits)
-ex_ol = findOverlaps(gr_hits, gr_exon_tx, type="within")
-
-tx_map = tibble(
-  hit_idx = mcols(gr_hits)$hit_idx[queryHits(ex_ol)],
-  tx_id   = as.integer(mcols(gr_exon_tx)$tx_id[subjectHits(ex_ol)])  
-) %>%
-  left_join(transcripts_df %>% dplyr::select(tx_id, tx_name), by = "tx_id") %>%
-  group_by(hit_idx) %>%
-  summarize(transcript = paste(unique(tx_name), collapse = ";"), .groups = "drop")
-
-annot = tibble(
-  hit_idx       = mcols(gr_hits)$hit_idx,
-  overlaps_5utr  = overlapsAny(gr_hits, gr_utr5, type = "within"),
-  overlaps_3utr  = overlapsAny(gr_hits, gr_utr3, type = "within"),
-  overlaps_cds   = overlapsAny(gr_hits, gr_cds,  type = "within"),
-  overlaps_exon  = overlapsAny(gr_hits, gr_exons,type = "within")
-)
-
-annot = annot %>%
-  left_join(tx_map, by="hit_idx")
-
-orf_match_table = open_reading_frames_annotated_filtered %>%
-  dplyr::select(target_id, blast_match)
-
-tx_to_protein = tx_map %>%
-  separate_rows(transcript, sep = ";") %>%
-  dplyr::mutate(tx_id = as.integer(transcript)) %>%
-  left_join(transcripts_df %>% dplyr::select(tx_id, tx_name), by = "tx_id") %>%
-  left_join(open_reading_frames_annotated_filtered %>% dplyr::select(target_id, blast_match),
-            by = c("tx_name" = "target_id")) %>%
-  dplyr::filter(!is.na(blast_match)) %>%
-  group_by(hit_idx) %>%
-  summarize(blast_match = paste(unique(blast_match), collapse = ";"), .groups = "drop")
-
-data$hit_idx = seq_len(nrow(data))
-
-data = data %>%
-  bind_cols(annot %>% dplyr::select(-hit_idx)) %>%
-  left_join(tx_to_protein, by = "hit_idx") %>%
-  dplyr::mutate(
-    stringtie_location = case_when(
-      overlaps_5utr ~ "Exon - 5' UTR",
-      overlaps_3utr ~ "Exon - 3' UTR",
-      overlaps_cds  ~ "Exon - CDS",
-      overlaps_exon ~ "Exon - non-coding",
-      TRUE          ~ "Intergenic"
-    )
-  ) %>%
-  dplyr::rename(stringtie_transcripts = transcript) %>%
-  dplyr::select(-c('overlaps_5utr', 'overlaps_3utr', 'overlaps_cds',
-                   'overlaps_exon', 'hit_idx'))
+#data = dplyr::mutate(data, gag_gene = case_when(gencode_gene_name %in% gag_genes$gene_name ~ T,
+#                                                T ~ F))
 
 ################################################################################
 ## Collapse overlapping sites
@@ -558,9 +359,6 @@ unique_data = as.data.frame(gr_hits)
 ## Export
 ################################################################################
 
-write_csv(data, file = 'import/miranda/miranda_output_annotated.csv')
-write_csv(unique_data, file = 'import/miranda/miranda_output_unique_annotated.csv')
+write_csv(data, file = 'import/miranda/hg38/hg38_80_output_annotated.csv')
+write_csv(unique_data, file = 'import/miranda/hg38/hg38_80_output_unique_annotated.csv')
 
-imprinted_genes = c('Rtl1', 'Rasgrf1', 'Impact', 'Slc38a4', 'Kcnq1ot1', 'Mest', 'Snrpn', 'Cdh15')
-
-view(dplyr::filter(unique_data, gencode_gene_name %in% imprinted_genes))
