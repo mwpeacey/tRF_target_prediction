@@ -50,6 +50,38 @@ make_hit_granges <- function(df) {
   )
 }
 
+reduce_hit_granges <- function(gr) {
+  if (length(gr) == 0) {
+    return(gr)
+  }
+
+  GenomicRanges::reduce(gr, ignore.strand = FALSE)
+}
+
+normalize_hit_df <- function(df, label) {
+  if (!"start" %in% names(df) && "genomic_start" %in% names(df)) {
+    df <- dplyr::rename(df, start = genomic_start)
+  }
+
+  if (!"end" %in% names(df) && "genomic_end" %in% names(df)) {
+    df <- dplyr::rename(df, end = genomic_end)
+  }
+
+  required_cols <- c("seqnames", "start", "end", "strand", "alignment_score")
+  missing_cols <- setdiff(required_cols, names(df))
+
+  if (length(missing_cols) > 0) {
+    stop(
+      glue(
+        "{label} is missing required columns: ",
+        "{paste(missing_cols, collapse = ', ')}"
+      )
+    )
+  }
+
+  df
+}
+
 count_overlap_sites <- function(a, b) {
   if (length(a) == 0 || length(b) == 0) {
     return(0L)
@@ -200,6 +232,9 @@ message("Loading tRF and miRNA predictions...")
 tRF_data <- read.csv(tRF_file, header = TRUE)
 miRNA_data <- read.csv(miRNA_file, header = TRUE)
 
+tRF_data <- normalize_hit_df(tRF_data, "tRF_file")
+miRNA_data <- normalize_hit_df(miRNA_data, "miRNA_file")
+
 process_cutoff_combo <- function(tRF_cutoff, miRNA_cutoff) {
   message(glue("Processing tRF cutoff {tRF_cutoff}, miRNA cutoff {miRNA_cutoff}"))
 
@@ -216,8 +251,25 @@ process_cutoff_combo <- function(tRF_cutoff, miRNA_cutoff) {
   tRF_gr <- make_hit_granges(tRF_subset)
   miRNA_gr <- make_hit_granges(miRNA_subset)
 
-  tRF_ov <- findOverlaps(tRF_gr, gene_universe_flat, ignore.strand = FALSE)
-  miRNA_ov <- findOverlaps(miRNA_gr, gene_universe_flat, ignore.strand = FALSE)
+  # Collapse overlapping predictions into unique genomic loci so the analysis
+  # does not depend on whether the input tables were pre-collapsed.
+  tRF_gr <- reduce_hit_granges(tRF_gr)
+  miRNA_gr <- reduce_hit_granges(miRNA_gr)
+
+  # Match the existing annotation logic: only count sites fully contained
+  # within the 5' UTR universe, not boundary-touching partial overlaps.
+  tRF_ov <- findOverlaps(
+    tRF_gr,
+    gene_universe_flat,
+    ignore.strand = FALSE,
+    type = "within"
+  )
+  miRNA_ov <- findOverlaps(
+    miRNA_gr,
+    gene_universe_flat,
+    ignore.strand = FALSE,
+    type = "within"
+  )
 
   tRF_gene_hits <- tibble(
     tRF_hit = queryHits(tRF_ov),
