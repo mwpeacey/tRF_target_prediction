@@ -54,11 +54,21 @@ elif [ ${RUN_MODE} == 'miRNA' ]; then
 
 fi
 
-grep -A1 "Scores for this hit:" result_${sRNA}_plus \
-  | sort \
-  | grep '>' \
-  | awk -v strand="+" '{ print $0 "\t" strand }' \
-  > summary_${sRNA}
+awk -v strand="+" '
+/^   Query:/ { query_aln = $0; aln_state = 1; next }
+aln_state == 1 { match_aln = $0; aln_state = 2; next }
+aln_state == 2 { ref_aln = $0; aln_state = 0; next }
+/Scores for this hit:/ { scores_next = 1; next }
+scores_next {
+    if (/^>/) {
+        gsub(/\t/, " ", query_aln)
+        gsub(/\t/, " ", match_aln)
+        gsub(/\t/, " ", ref_aln)
+        print $0 "\t" strand "\t" query_aln "\t" match_aln "\t" ref_aln
+    }
+    scores_next = 0
+}
+' result_${sRNA}_plus > summary_${sRNA}
 
 echo "Scanning minus strand on $(date)."
 
@@ -78,11 +88,21 @@ elif [ ${RUN_MODE} == 'miRNA' ]; then
 
 fi
 
-grep -A1 "Scores for this hit:" result_${sRNA}_minus \
-  | sort \
-  | grep '>' \
-  | awk -v strand="-" '{ print $0 "\t" strand }' \
-  >> summary_${sRNA}
+awk -v strand="-" '
+/^   Query:/ { query_aln = $0; aln_state = 1; next }
+aln_state == 1 { match_aln = $0; aln_state = 2; next }
+aln_state == 2 { ref_aln = $0; aln_state = 0; next }
+/Scores for this hit:/ { scores_next = 1; next }
+scores_next {
+    if (/^>/) {
+        gsub(/\t/, " ", query_aln)
+        gsub(/\t/, " ", match_aln)
+        gsub(/\t/, " ", ref_aln)
+        print $0 "\t" strand "\t" query_aln "\t" match_aln "\t" ref_aln
+    }
+    scores_next = 0
+}
+' result_${sRNA}_minus >> summary_${sRNA}
 
 echo "Finished on $(date)."
 

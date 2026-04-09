@@ -7,6 +7,16 @@
 library(tidyverse)
 library(glue)
 
+#' Reconstruct a miRanda ASCII alignment block from its three stored components.
+#'
+#' @param query_aln Character. The raw Query line from miRanda output.
+#' @param match_str Character. The raw match-symbol line (|, :, space).
+#' @param ref_aln   Character. The raw Ref line from miRanda output.
+#' @return A single character string containing the formatted alignment block.
+format_alignment <- function(query_aln, match_str, ref_aln) {
+  paste(query_aln, match_str, ref_aln, sep = "\n")
+}
+
 args = commandArgs(TRUE)
 
 summary_directory = args[1]
@@ -52,11 +62,11 @@ process_one_file <- function(file, first_file = FALSE) {
   # If there are header/summary lines with too few columns, X11 will be NA.
   # Keep only rows that have something in X11.
   
-  if (!"X11" %in% names(temp)) {
-   message("  -> file has fewer than 11 columns (no valid hits?), skipping")
+  if (!"X14" %in% names(temp)) {
+   message("  -> file has fewer than 14 columns (missing alignment data?), skipping")
    return(invisible(NULL))}
 
-  temp <- temp %>% filter(!is.na(X11))
+  temp <- temp %>% filter(!is.na(X11), !is.na(X14))
 
   # Drop V9, V10 early
   if (all(c("X9", "X10") %in% names(temp))) {
@@ -74,7 +84,10 @@ process_one_file <- function(file, first_file = FALSE) {
       miRNA_position  = X6,
       target_position = X7,
       alignment_length= X8,
-      strand          = X11
+      strand          = X11,
+      query_alignment = X12,
+      match_string    = X13,
+      ref_alignment   = X14
     ) %>%
     # Coerce scores to numeric and filter early
     mutate(
@@ -140,7 +153,8 @@ process_one_file <- function(file, first_file = FALSE) {
   csv_df <- df %>%
     select(
       tRF, seqnames, alignment_score, energy,
-      genomic_start, genomic_end, alignment_length, strand
+      genomic_start, genomic_end, alignment_length, strand,
+      query_alignment, match_string, ref_alignment
     )
 
   readr::write_csv(
