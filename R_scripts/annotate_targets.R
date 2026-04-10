@@ -617,7 +617,7 @@ write_csv(unique_data, file = 'import/miranda/miranda_output_unique_annotated.cs
 
 generate_alignment_report <- function(df, output_file,
                                       title = "tRF Target Site Alignment Browser",
-                                      max_rows = 20000) {
+                                      max_rows = Inf) {
 
   # Check that alignment columns are present
   required_cols <- c("query_alignment", "match_string", "ref_alignment")
@@ -673,31 +673,76 @@ generate_alignment_report <- function(df, output_file,
       nchar(match, type = "chars")
     }
 
-    normalize_match_string <- function(match_str, q_core, r_core) {
+    leading_space_width <- function(x) {
+      match <- regmatches(x, regexpr("^\\s*", x))
+
+      if (length(match) == 0L || identical(match, character(0)) || is.na(match)) {
+        return(0L)
+      }
+
+      nchar(match, type = "chars")
+    }
+
+    trailing_space_width <- function(x) {
+      match <- regmatches(x, regexpr("\\s*$", x))
+
+      if (length(match) == 0L || identical(match, character(0)) || is.na(match)) {
+        return(0L)
+      }
+
+      nchar(match, type = "chars")
+    }
+
+    normalize_match_string <- function(
+      match_str,
+      display_width,
+      label_prefix_width,
+      desired_left_pad,
+      desired_right_pad
+    ) {
       if (is.na(match_str)) {
         return("")
       }
 
-      core_width <- max(
-        nchar(q_core, type = "chars"),
-        nchar(r_core, type = "chars")
-      )
-      match_width <- nchar(match_str, type = "chars")
+      lead_spaces <- leading_space_width(match_str)
+      if (label_prefix_width > 0L && lead_spaces >= label_prefix_width) {
+        match_str <- substring(match_str, label_prefix_width + 1L)
+      }
 
-      if (match_width >= core_width) {
+      match_width <- nchar(match_str, type = "chars")
+      if (match_width == display_width) {
         return(match_str)
       }
 
-      missing_width <- core_width - match_width
-      left_missing <- max(
-        edge_lowercase_width(q_core, "left"),
-        edge_lowercase_width(r_core, "left")
-      )
-      right_missing <- max(
-        edge_lowercase_width(q_core, "right"),
-        edge_lowercase_width(r_core, "right")
-      )
+      lead_spaces <- leading_space_width(match_str)
+      trail_spaces <- trailing_space_width(match_str)
 
+      if (match_width > display_width) {
+        extra_width <- match_width - display_width
+        trim_left <- min(extra_width, max(0L, lead_spaces - desired_left_pad))
+        extra_width <- extra_width - trim_left
+
+        trim_right <- min(extra_width, max(0L, trail_spaces - desired_right_pad))
+        extra_width <- extra_width - trim_right
+
+        if (trim_left > 0L) {
+          match_str <- substring(match_str, trim_left + 1L)
+        }
+
+        if (trim_right > 0L) {
+          match_str <- substring(
+            match_str,
+            1L,
+            nchar(match_str, type = "chars") - trim_right
+          )
+        }
+
+        return(match_str)
+      }
+
+      missing_width <- display_width - match_width
+      left_missing <- max(0L, desired_left_pad - lead_spaces)
+      right_missing <- max(0L, desired_right_pad - trail_spaces)
       left_pad <- min(left_missing, missing_width)
       right_pad <- min(right_missing, missing_width - left_pad)
       remaining_pad <- missing_width - left_pad - right_pad
@@ -728,22 +773,39 @@ generate_alignment_report <- function(df, output_file,
     r_seq <- strip_label(ref_aln, "Ref")
     q_core <- extract_core(q_seq)
     r_core <- extract_core(r_seq)
-    match_str <- normalize_match_string(match_str, q_core, r_core)
 
     q_bounds <- base_bounds(q_seq)
     r_bounds <- base_bounds(r_seq)
 
     left_pad <- max(q_bounds$left, r_bounds$left)
     right_pad <- max(q_bounds$right, r_bounds$right)
+    overhang_left <- max(
+      edge_lowercase_width(q_core, "left"),
+      edge_lowercase_width(r_core, "left")
+    )
+    overhang_right <- max(
+      edge_lowercase_width(q_core, "right"),
+      edge_lowercase_width(r_core, "right")
+    )
+    display_width <- max(
+      nchar(q_seq, type = "chars"),
+      nchar(r_seq, type = "chars")
+    )
+    label_prefix_width <- max(
+      nchar(query_aln, type = "chars") - nchar(q_seq, type = "chars"),
+      nchar(ref_aln, type = "chars") - nchar(r_seq, type = "chars")
+    )
+    match_str <- normalize_match_string(
+      match_str = match_str,
+      display_width = display_width,
+      label_prefix_width = label_prefix_width,
+      desired_left_pad = left_pad + overhang_left,
+      desired_right_pad = right_pad + overhang_right
+    )
 
     list(
       query = paste0("tRF:      ", q_seq),
-      match = paste0(
-        "          ",
-        strrep(" ", left_pad),
-        match_str,
-        strrep(" ", right_pad)
-      ),
+      match = paste0("          ", match_str),
       ref   = paste0("target:   ", r_seq)
     )
   }

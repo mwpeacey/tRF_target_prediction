@@ -1,0 +1,10 @@
+name: trf-target-browser-poc
+title: tRF Target Site Browser
+username: mwpeacey
+account: mwpeacey
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17107173
+bundleId: 11834486
+url: https://mwpeacey.shinyapps.io/trf-target-browser-poc/
+version: 1
