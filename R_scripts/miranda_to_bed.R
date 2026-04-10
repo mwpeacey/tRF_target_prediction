@@ -8,13 +8,38 @@ library(tidyverse)
 library(glue)
 
 #' Reconstruct a miRanda ASCII alignment block from its three stored components.
+#' Strips the original miRanda label prefixes ("   Query:    ", "   Ref:      ",
+#' and corresponding leading spaces on the match line) and re-adds fixed-width
+#' labels so the match characters align with the bases.
 #'
 #' @param query_aln Character. The raw Query line from miRanda output.
 #' @param match_str Character. The raw match-symbol line (|, :, space).
 #' @param ref_aln   Character. The raw Ref line from miRanda output.
 #' @return A single character string containing the formatted alignment block.
 format_alignment <- function(query_aln, match_str, ref_aln) {
-  paste(query_aln, match_str, ref_aln, sep = "\n")
+  # Detect and measure the Query label prefix
+  q_match <- regexpr("^\\s*Query:\\s*", query_aln)
+  prefix_len <- if (attr(q_match, "match.length") > 0) {
+    attr(q_match, "match.length")
+  } else {
+    0L
+  }
+
+  # Strip the same number of characters from all three lines
+  if (prefix_len > 0) {
+    q_seq <- substring(query_aln, prefix_len + 1)
+    m_seq <- substring(match_str, prefix_len + 1)
+    r_seq <- substring(ref_aln,   prefix_len + 1)
+  } else {
+    q_seq <- query_aln
+    m_seq <- match_str
+    r_seq <- ref_aln
+  }
+
+  # Re-add uniform 10-character labels
+  paste0("Query:    ", q_seq, "\n",
+         "          ", m_seq, "\n",
+         "Ref:      ", r_seq)
 }
 
 args = commandArgs(TRUE)
@@ -52,6 +77,7 @@ process_one_file <- function(file, first_file = FALSE) {
     file,
     col_names = FALSE,
     col_types = cols(.default = col_character()),
+    trim_ws = FALSE,
     progress = FALSE
   )
   
@@ -195,4 +221,3 @@ for (f in filenames) {
   process_one_file(f, first_file = first)
   if (first) first <- FALSE
 }
-

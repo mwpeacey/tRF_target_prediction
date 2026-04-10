@@ -12,7 +12,7 @@ library(GenomicFeatures)
 library(AnnotationHub)
 
 #data = read_csv('import/miranda/miranda_output_annotated.csv')
-unique_data = read_csv('import/miranda/miranda_output_unique_annotated.csv')
+#unique_data = read_csv('import/miranda/miranda_output_unique_annotated.csv')
 
 ################################################################################
 ## Import data
@@ -22,7 +22,7 @@ unique_data = read_csv('import/miranda/miranda_output_unique_annotated.csv')
 
 canonical_chromosomes = paste0("chr", c(1:19, "X", "Y"))
 
-data = read.csv(file = 'import/miranda/miranda_output_70.csv', header = TRUE) %>%
+data = read.csv(file = 'import/miranda/new/miranda_output_70.csv', header = TRUE) %>%
   dplyr::rename(start = genomic_start, end = genomic_end) %>%
   dplyr::filter(alignment_score >= 70) %>%
   dplyr::filter(seqnames %in% canonical_chromosomes)
@@ -558,9 +558,6 @@ unique_data = as.data.frame(gr_hits)
 ## Export
 ################################################################################
 
-write_csv(data, file = 'import/miranda/miranda_output_annotated.csv')
-write_csv(unique_data, file = 'import/miranda/miranda_output_unique_annotated.csv')
-
 #imprinted_genes = c('Rtl1', 'Rasgrf1', 'Impact', 'Slc38a4', 'Kcnq1ot1', 
 #                    'Mest', 'Snrpn', 'Cdh15', 'Peg3', 'Peg10')
 
@@ -568,8 +565,553 @@ imprinted_genes = read_csv('import/annotation_tables/geneimprint_mouse_imprinted
 
 imprinted_gene_names = dplyr::filter(imprinted_genes, Status == "Imprinted")$Gene
 
-imprinted_data = dplyr::filter(unique_data, gencode_gene_name %in% imprinted_gene_names)
+annotate_imprint_status <- function(gene_names, imprinted_gene_names) {
+  purrr::map_chr(gene_names, function(x) {
+    if (is.na(x) || !nzchar(x)) {
+      return(NA_character_)
+    }
 
-write_csv(imprinted_data, file = 'import/miranda/imprinted_target_sites.csv')
+    genes <- stringr::str_trim(stringr::str_split(x, ";")[[1]])
+    genes <- genes[nzchar(genes)]
 
+    if (length(genes) == 0L) {
+      return(NA_character_)
+    }
 
+    if (any(genes %in% imprinted_gene_names)) {
+      "Imprinted"
+    } else {
+      "Not imprinted"
+    }
+  })
+}
+
+data$imprint_status = annotate_imprint_status(data$gencode_gene_name, imprinted_gene_names)
+unique_data$imprint_status = annotate_imprint_status(unique_data$gencode_gene_name, imprinted_gene_names)
+
+data$is_imprinted = !is.na(data$imprint_status) & data$imprint_status == "Imprinted"
+unique_data$is_imprinted = !is.na(unique_data$imprint_status) &
+  unique_data$imprint_status == "Imprinted"
+
+write_csv(data, file = 'import/miranda/miranda_output_annotated.csv')
+write_csv(unique_data, file = 'import/miranda/miranda_output_unique_annotated.csv')
+
+################################################################################
+## Alignment visualization (HTML report)
+################################################################################
+
+#' Generate a browsable HTML report of miRanda alignments with colour-coded
+#' match characters. Each target site is rendered as a card showing annotation
+#' metadata and the reconstructed alignment block. A search bar allows filtering
+#' by gene name, tRF, coordinates, or LTR family.
+#'
+#' @param df        A data frame containing at minimum: tRF, seqnames, start,
+#'                  end, strand, alignment_score, energy, query_alignment,
+#'                  match_string, ref_alignment. Optional columns (used when
+#'                  present): gencode_gene_name, gencode_location, LTR,
+#'                  LTR_family, LTR_gene_id, stringtie_location,
+#'                  tRNA_anticodon, imprint_status, is_imprinted.
+#' @param output_file  Path to write the HTML report.
+#' @param title     Title displayed at the top of the report.
+#' @param max_rows  Maximum number of rows to render. Set to Inf to include all.
+
+generate_alignment_report <- function(df, output_file,
+                                      title = "tRF Target Site Alignment Browser",
+                                      max_rows = 20000) {
+
+  # Check that alignment columns are present
+  required_cols <- c("query_alignment", "match_string", "ref_alignment")
+  if (!all(required_cols %in% names(df))) {
+    warning("Alignment columns not found in data frame. Skipping report generation.")
+    return(invisible(NULL))
+  }
+
+  # Truncate if necessary
+  if (nrow(df) > max_rows) {
+    message(sprintf("Truncating report to %d rows (of %d total). Increase max_rows to include more.",
+                    max_rows, nrow(df)))
+    df <- df[seq_len(max_rows), ]
+  }
+
+  # Helpers
+  escape_html <- function(x) {
+    x <- as.character(x)
+    x <- gsub("&", "&amp;", x, fixed = TRUE)
+    x <- gsub("<", "&lt;",  x, fixed = TRUE)
+    x <- gsub(">", "&gt;",  x, fixed = TRUE)
+    x
+  }
+
+  safe_field <- function(df, row, col, fallback = "\u2014") {
+    if (col %in% names(df) && !is.na(df[[col]][row])) as.character(df[[col]][row]) else fallback
+  }
+
+  # Normalize miRanda alignment rows for display. The query/reference lines
+  # include labels plus flanking 3'/5' annotations, while the match line in our
+  # CSV is just the base-pair markers. We therefore strip only the labels from
+  # the query/reference rows, then pad the marker line to the first/last base.
+  realign_display <- function(query_aln, match_str, ref_aln) {
+    strip_label <- function(x, label) {
+      sub(paste0("^\\s*", label, ":\\s*"), "", x)
+    }
+
+    extract_core <- function(x) {
+      x %>%
+        sub("^\\s*[35]'\\s*", "", .) %>%
+        sub("\\s*[35]'\\s*$", "", .)
+    }
+
+    edge_lowercase_width <- function(x, side = c("left", "right")) {
+      side <- match.arg(side)
+      pattern <- if (side == "left") "^[a-z]+" else "[a-z]+$"
+      match <- regmatches(x, regexpr(pattern, x))
+
+      if (length(match) == 0L || identical(match, character(0)) || identical(match, "")) {
+        return(0L)
+      }
+
+      nchar(match, type = "chars")
+    }
+
+    normalize_match_string <- function(match_str, q_core, r_core) {
+      if (is.na(match_str)) {
+        return("")
+      }
+
+      core_width <- max(
+        nchar(q_core, type = "chars"),
+        nchar(r_core, type = "chars")
+      )
+      match_width <- nchar(match_str, type = "chars")
+
+      if (match_width >= core_width) {
+        return(match_str)
+      }
+
+      missing_width <- core_width - match_width
+      left_missing <- max(
+        edge_lowercase_width(q_core, "left"),
+        edge_lowercase_width(r_core, "left")
+      )
+      right_missing <- max(
+        edge_lowercase_width(q_core, "right"),
+        edge_lowercase_width(r_core, "right")
+      )
+
+      left_pad <- min(left_missing, missing_width)
+      right_pad <- min(right_missing, missing_width - left_pad)
+      remaining_pad <- missing_width - left_pad - right_pad
+
+      paste0(
+        strrep(" ", left_pad + remaining_pad),
+        match_str,
+        strrep(" ", right_pad)
+      )
+    }
+
+    base_bounds <- function(x) {
+      base_pos <- gregexpr("[A-Za-z-]", x)[[1]]
+      if (length(base_pos) == 1L && base_pos[1] == -1L) {
+        return(list(left = 0L, right = 0L))
+      }
+
+      first_base <- base_pos[1]
+      last_base <- base_pos[length(base_pos)]
+
+      list(
+        left = first_base - 1L,
+        right = nchar(x, type = "chars") - last_base
+      )
+    }
+
+    q_seq <- strip_label(query_aln, "Query")
+    r_seq <- strip_label(ref_aln, "Ref")
+    q_core <- extract_core(q_seq)
+    r_core <- extract_core(r_seq)
+    match_str <- normalize_match_string(match_str, q_core, r_core)
+
+    q_bounds <- base_bounds(q_seq)
+    r_bounds <- base_bounds(r_seq)
+
+    left_pad <- max(q_bounds$left, r_bounds$left)
+    right_pad <- max(q_bounds$right, r_bounds$right)
+
+    list(
+      query = paste0("tRF:      ", q_seq),
+      match = paste0(
+        "          ",
+        strrep(" ", left_pad),
+        match_str,
+        strrep(" ", right_pad)
+      ),
+      ref   = paste0("target:   ", r_seq)
+    )
+  }
+
+  if (nrow(df) > 200000) {
+    warning("Static self-contained HTML reports with >200,000 rows will be very large and may still be slow in a browser.")
+  }
+
+  report_rows <- vector("list", nrow(df))
+  if (nrow(df) > 0) {
+    message("Serializing report rows for HTML...")
+    pb <- utils::txtProgressBar(min = 0, max = nrow(df), style = 3)
+    on.exit(close(pb), add = TRUE)
+  }
+
+  for (i in seq_len(nrow(df))) {
+    gene <- safe_field(df, i, "gencode_gene_name")
+    anticodon <- safe_field(df, i, "tRNA_anticodon", "")
+    gc_loc <- safe_field(df, i, "gencode_location")
+    st_loc <- safe_field(df, i, "stringtie_location")
+    imprint_status <- if ("imprint_status" %in% names(df) && !is.na(df$imprint_status[i])) {
+      as.character(df$imprint_status[i])
+    } else {
+      NA_character_
+    }
+    ltr_info <- if ("LTR" %in% names(df) && !is.na(df$LTR[i]) && df$LTR[i]) {
+      paste0(safe_field(df, i, "LTR_family"), " / ", safe_field(df, i, "LTR_gene_id"))
+    } else {
+      "None"
+    }
+
+    aln <- realign_display(
+      safe_field(df, i, "query_alignment", "N/A"),
+      safe_field(df, i, "match_string", ""),
+      safe_field(df, i, "ref_alignment", "N/A")
+    )
+
+    loc_text <- paste0(
+      df$seqnames[i], ":",
+      format(df$start[i], big.mark = ","),
+      "-",
+      format(df$end[i], big.mark = ","),
+      " (", df$strand[i], ")"
+    )
+
+    report_rows[[i]] <- list(
+      index = i,
+      score = as.numeric(df$alignment_score[i]),
+      trf = safe_field(df, i, "tRF", "N/A"),
+      anticodon = if (nzchar(anticodon)) anticodon else "Anticodon N/A",
+      gene = gene,
+      location = loc_text,
+      energy = as.character(df$energy[i]),
+      has_ltr = identical(ltr_info != "None", TRUE),
+      ltr_info = ltr_info,
+      imprint_status = imprint_status,
+      gencode_location = gc_loc,
+      stringtie_location = st_loc,
+      query = aln$query,
+      match = aln$match,
+      ref = aln$ref,
+      search_text = tolower(
+        paste(
+          safe_field(df, i, "tRF", "N/A"),
+          if (nzchar(anticodon)) anticodon else "",
+          gene,
+          loc_text,
+          ltr_info,
+          gc_loc,
+          st_loc,
+          if (is.na(imprint_status)) "" else imprint_status,
+          sep = " "
+        )
+      )
+    )
+
+    if (nrow(df) > 0 && (i == 1L || i %% 100L == 0L || i == nrow(df))) {
+      utils::setTxtProgressBar(pb, i)
+    }
+  }
+
+  rows_json <- jsonlite::toJSON(
+    report_rows,
+    auto_unbox = TRUE,
+    null = "null",
+    na = "null"
+  )
+  rows_json <- gsub("</", "<\\/", rows_json, fixed = TRUE)
+
+  html <- paste0(
+'<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>', escape_html(title), '</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 1200px; margin: 0 auto; padding: 20px; background: #f6f8fa; color: #24292f;
+  }
+  h1 { margin-bottom: 4px; }
+  .summary { color: #57606a; margin-bottom: 16px; }
+  .filter-bar, .page-bar {
+    margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  }
+  .filter-bar input, .filter-bar select, .page-bar select {
+    padding: 8px 12px; border: 1px solid #d0d7de; border-radius: 6px; font-size: 14px; background: white;
+  }
+  .filter-bar input { width: 350px; }
+  .page-bar button {
+    padding: 8px 12px; border: 1px solid #d0d7de; border-radius: 6px; background: white; cursor: pointer;
+    font-size: 14px;
+  }
+  .page-bar button:disabled { cursor: default; opacity: 0.5; }
+  .page-info { color: #57606a; font-size: 14px; }
+  .card {
+    background: white; border: 1px solid #d0d7de; border-radius: 6px;
+    padding: 16px; margin: 8px 0;
+  }
+  .meta { margin-bottom: 8px; line-height: 1.8; }
+  .meta span { display: inline-block; margin-right: 16px; font-size: 13px; color: #57606a; }
+  .trf { font-weight: 600; color: #0550ae !important; }
+  .anticodon { font-weight: 600; color: #9a6700 !important; }
+  .gene { font-weight: 600; color: #1a7f37 !important; }
+  .ltr-yes { color: #8250df !important; font-weight: 600; }
+  .ltr-no { color: #9a9a9a !important; }
+  .imprinted-yes { color: #b42318 !important; font-weight: 600; }
+  .imprinted-no { color: #9a9a9a !important; }
+  .alignment {
+    background: #f6f8fa; padding: 12px; border-radius: 4px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 13px; line-height: 1.6; overflow-x: auto; margin: 0;
+  }
+  .wc { color: #1a7f37; font-weight: bold; }
+  .gu { color: #bf8700; font-weight: bold; }
+  .mm { color: #cf222e; }
+  .count { font-weight: 600; }
+  .empty {
+    background: white; border: 1px dashed #d0d7de; border-radius: 6px;
+    padding: 24px; color: #57606a;
+  }
+</style>
+</head>
+<body>
+<h1>', escape_html(title), '</h1>
+<p class="summary"><span class="count" id="visible-count">', nrow(df), '</span> of <span class="count">', nrow(df), '</span> target sites match current filters</p>
+<div class="filter-bar">
+  <input type="text" id="search" placeholder="Search gene, tRF, coordinates, LTR family...">
+  <select id="ltr-filter">
+    <option value="all">All sites</option>
+    <option value="ltr">LTR-associated only</option>
+    <option value="no-ltr">Non-LTR only</option>
+  </select>
+  <select id="imprinted-filter">
+    <option value="all">All genes</option>
+    <option value="imprinted">Imprinted genes only</option>
+    <option value="non-imprinted">Non-imprinted only</option>
+  </select>
+  <select id="sort-order">
+    <option value="original">Original order</option>
+    <option value="score-desc">Alignment score: high to low</option>
+    <option value="score-asc">Alignment score: low to high</option>
+  </select>
+</div>
+<div class="page-bar">
+  <button id="prev-page" type="button">Previous</button>
+  <button id="next-page" type="button">Next</button>
+  <select id="page-size">
+    <option value="50">50 per page</option>
+    <option value="100" selected>100 per page</option>
+    <option value="250">250 per page</option>
+    <option value="500">500 per page</option>
+  </select>
+  <span class="page-info" id="page-info"></span>
+</div>
+<div id="cards"></div>
+<script>
+const rows = ', rows_json, ';
+const state = {
+  query: "",
+  ltr: "all",
+  imprinted: "all",
+  sortOrder: "original",
+  page: 1,
+  pageSize: 100
+};
+
+let filteredRows = rows.slice();
+
+function escapeHtml(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function colorMatchString(matchStr) {
+  if (matchStr === null || matchStr === undefined) return "N/A";
+  return Array.from(String(matchStr)).map(function(ch) {
+    if (ch === "|") return \'<span class="wc">|</span>\';
+    if (ch === ":") return \'<span class="gu">:</span>\';
+    if (ch === " ") return " ";
+    return \'<span class="mm">\' + escapeHtml(ch) + \'</span>\';
+  }).join("");
+}
+
+function debounce(fn, delayMs) {
+  let timer = null;
+  return function() {
+    const args = arguments;
+    clearTimeout(timer);
+    timer = setTimeout(function() {
+      fn.apply(null, args);
+    }, delayMs);
+  };
+}
+
+function applyFiltersAndSort(resetPage) {
+  const query = state.query.trim().toLowerCase();
+
+  filteredRows = rows.filter(function(row) {
+    const matchesSearch = !query || row.search_text.indexOf(query) !== -1;
+    const matchesLtr = state.ltr === "all" ||
+      (state.ltr === "ltr" && row.has_ltr) ||
+      (state.ltr === "no-ltr" && !row.has_ltr);
+
+    const hasImprintStatus = row.imprint_status !== null && row.imprint_status !== undefined;
+    const isImprinted = row.imprint_status === "Imprinted";
+    const matchesImprinted = state.imprinted === "all" ||
+      (state.imprinted === "imprinted" && isImprinted) ||
+      (state.imprinted === "non-imprinted" && hasImprintStatus && !isImprinted);
+
+    return matchesSearch && matchesLtr && matchesImprinted;
+  });
+
+  filteredRows.sort(function(a, b) {
+    if (state.sortOrder === "score-desc") {
+      return b.score - a.score;
+    }
+    if (state.sortOrder === "score-asc") {
+      return a.score - b.score;
+    }
+    return a.index - b.index;
+  });
+
+  if (resetPage) {
+    state.page = 1;
+  }
+
+  const maxPage = Math.max(1, Math.ceil(filteredRows.length / state.pageSize));
+  if (state.page > maxPage) {
+    state.page = maxPage;
+  }
+}
+
+function renderCards() {
+  const cardsContainer = document.getElementById("cards");
+  const visibleCount = document.getElementById("visible-count");
+  const pageInfo = document.getElementById("page-info");
+  const prevButton = document.getElementById("prev-page");
+  const nextButton = document.getElementById("next-page");
+
+  const total = filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
+  const startIdx = total === 0 ? 0 : (state.page - 1) * state.pageSize;
+  const endIdx = Math.min(startIdx + state.pageSize, total);
+  const pageRows = filteredRows.slice(startIdx, endIdx);
+
+  if (pageRows.length === 0) {
+    cardsContainer.innerHTML = \'<div class="empty">No target sites match the current filters.</div>\';
+  } else {
+    cardsContainer.innerHTML = pageRows.map(function(row) {
+      const imprintTag = row.imprint_status
+        ? \'<span class="imprinted-tag \' + (row.imprint_status === "Imprinted" ? "imprinted-yes" : "imprinted-no") + \'">Imprint: \' + escapeHtml(row.imprint_status) + \'</span>\'
+        : "";
+      const ltrClass = row.has_ltr ? "ltr-yes" : "ltr-no";
+
+      return \'<div class="card">\' +
+        \'<div class="meta">\' +
+          \'<span class="trf">\' + escapeHtml(row.trf) + \'</span>\' +
+          \'<span class="anticodon">\' + escapeHtml(row.anticodon) + \'</span>\' +
+          \'<span class="gene">\' + escapeHtml(row.gene) + \'</span>\' +
+          \'<span class="loc">\' + escapeHtml(row.location) + \'</span>\' +
+          \'<span class="score">Score: \' + escapeHtml(row.score) + \' | Energy: \' + escapeHtml(row.energy) + \'</span>\' +
+          \'<span class="ltr-tag \' + ltrClass + \'">LTR: \' + escapeHtml(row.ltr_info) + \'</span>\' +
+          imprintTag +
+          \'<span class="region">GENCODE: \' + escapeHtml(row.gencode_location) + \' | StringTie: \' + escapeHtml(row.stringtie_location) + \'</span>\' +
+        \'</div>\' +
+        \'<pre class="alignment">\' +
+          escapeHtml(row.query) + "\\n" +
+          colorMatchString(row.match) + "\\n" +
+          escapeHtml(row.ref) +
+        \'</pre>\' +
+      \'</div>\';
+    }).join("\\n");
+  }
+
+  visibleCount.textContent = total;
+  pageInfo.textContent = total === 0
+    ? "No results"
+    : "Showing " + (startIdx + 1) + "-" + endIdx + " of " + total + " matching target sites (page " + state.page + " of " + totalPages + ")";
+
+  prevButton.disabled = state.page <= 1;
+  nextButton.disabled = state.page >= totalPages;
+}
+
+function refresh(resetPage) {
+  applyFiltersAndSort(resetPage);
+  renderCards();
+}
+
+document.getElementById("search").addEventListener("input", debounce(function(event) {
+  state.query = event.target.value;
+  refresh(true);
+}, 120));
+
+document.getElementById("ltr-filter").addEventListener("change", function(event) {
+  state.ltr = event.target.value;
+  refresh(true);
+});
+
+document.getElementById("imprinted-filter").addEventListener("change", function(event) {
+  state.imprinted = event.target.value;
+  refresh(true);
+});
+
+document.getElementById("sort-order").addEventListener("change", function(event) {
+  state.sortOrder = event.target.value;
+  refresh(true);
+});
+
+document.getElementById("page-size").addEventListener("change", function(event) {
+  state.pageSize = parseInt(event.target.value, 10);
+  refresh(true);
+});
+
+document.getElementById("prev-page").addEventListener("click", function() {
+  if (state.page > 1) {
+    state.page -= 1;
+    renderCards();
+  }
+});
+
+document.getElementById("next-page").addEventListener("click", function() {
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / state.pageSize));
+  if (state.page < totalPages) {
+    state.page += 1;
+    renderCards();
+  }
+});
+
+refresh(true);
+</script>
+</body>
+</html>')
+
+  writeLines(html, output_file)
+  message("Alignment report written to: ", output_file)
+}
+
+# Generate reports for key subsets
+if (all(c("query_alignment", "match_string", "ref_alignment") %in% names(unique_data))) {
+
+  generate_alignment_report(
+    unique_data,
+    output_file = 'import/miranda/alignment_report_unique.html',
+    title       = "tRF Target Site Alignment Browser — Unique Target Sites"
+  )
+}
