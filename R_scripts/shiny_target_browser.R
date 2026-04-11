@@ -305,6 +305,10 @@ build_alignment_card <- function(row) {
         paste0("LTR: ", ltr_info)
       ),
       shiny::tags$span(
+        class = paste("gag-tag", if (identical(row$gag_gene[[1]], TRUE) || identical(row$gag_gene[[1]], "TRUE")) "gag-yes" else "gag-no"),
+        paste0("Gag: ", if (identical(row$gag_gene[[1]], TRUE) || identical(row$gag_gene[[1]], "TRUE")) "Yes" else "No")
+      ),
+      shiny::tags$span(
         class = paste("gencode-tag", if (tolower(as_display_string(row$gencode_location[[1]])) == "intergenic") "gencode-intergenic" else "gencode-genic"),
         paste0("GENCODE: ", as_display_string(row$gencode_location[[1]]))
       ),
@@ -356,6 +360,10 @@ target_table_sql <- function(csv_path) {
     "  NULLIF(gencode_location, 'NA') AS gencode_location, ",
     "  NULLIF(stringtie_location, 'NA') AS stringtie_location, ",
     "  NULLIF(imprint_status, 'NA') AS imprint_status, ",
+    "  CASE ",
+    "    WHEN UPPER(COALESCE(CAST(gag_gene AS VARCHAR), 'FALSE')) = 'TRUE' THEN TRUE ",
+    "    ELSE FALSE ",
+    "  END AS gag_gene, ",
     "  query_alignment, match_string, ref_alignment, ",
     "  LOWER(CONCAT_WS(' ', ",
     "    COALESCE(tRF, ''), ",
@@ -400,6 +408,7 @@ build_where_clause <- function(
   con,
   search,
   ltr_filter,
+  gag_filter,
   imprinted_filter,
   gencode_locations,
   stringtie_locations,
@@ -418,6 +427,12 @@ build_where_clause <- function(
     clauses <- c(clauses, "LTR = TRUE")
   } else if (identical(ltr_filter, "no-ltr")) {
     clauses <- c(clauses, "LTR = FALSE")
+  }
+
+  if (identical(gag_filter, "gag")) {
+    clauses <- c(clauses, "gag_gene = TRUE")
+  } else if (identical(gag_filter, "no-gag")) {
+    clauses <- c(clauses, "gag_gene = FALSE")
   }
 
   if (identical(imprinted_filter, "imprinted")) {
@@ -750,6 +765,19 @@ ui <- shiny::fluidPage(
       .ltr-no {
         color: #999999 !important;
       }
+      .gag-tag {
+        padding: 1px 7px;
+        border-radius: 2px;
+        font-size: 12px !important;
+      }
+      .gag-yes {
+        color: #6b3a6b !important;
+        font-weight: 700;
+        background: #f3ecf3;
+      }
+      .gag-no {
+        color: #999999 !important;
+      }
       .imprinted-tag {
         padding: 1px 7px;
         border-radius: 2px;
@@ -984,6 +1012,7 @@ ui <- shiny::fluidPage(
         shiny::textInput("search", "Search Sites", placeholder = "tRF, gene, coordinates, LTR..."),
         shiny::sliderInput("score_range", "Alignment Score", min = score_min, max = score_max, value = c(score_min, score_max), step = 5, ticks = TRUE),
         shiny::selectInput("ltr_filter", "LTR Association", choices = c("All sites" = "all", "LTR-associated only" = "ltr", "Non-LTR only" = "no-ltr")),
+        shiny::selectInput("gag_filter", "Gag-Derived", choices = c("All sites" = "all", "Gag-derived only" = "gag", "Non-Gag only" = "no-gag")),
         shiny::selectInput("imprinted_filter", "Imprinting", choices = c("All genes" = "all", "Imprinted only" = "imprinted", "Not imprinted only" = "non-imprinted")),
         shiny::selectizeInput("gencode_locations", "GENCODE Region", choices = gencode_location_choices, multiple = TRUE, options = list(placeholder = "All GENCODE regions")),
         shiny::selectizeInput("stringtie_locations", "StringTie Region", choices = stringtie_location_choices, multiple = TRUE, options = list(placeholder = "All StringTie regions")),
@@ -1015,7 +1044,7 @@ server <- function(input, output, session) {
   current_page_data <- shiny::reactiveVal(data.frame())
 
   shiny::observeEvent(
-    list(input$search, input$ltr_filter, input$imprinted_filter, input$gencode_locations, input$stringtie_locations, input$score_range, input$results_table_sort),
+    list(input$search, input$ltr_filter, input$gag_filter, input$imprinted_filter, input$gencode_locations, input$stringtie_locations, input$score_range, input$results_table_sort),
     {
       current_page(1L)
     },
@@ -1027,6 +1056,7 @@ server <- function(input, output, session) {
       con = con,
       search = input$search,
       ltr_filter = input$ltr_filter,
+      gag_filter = input$gag_filter,
       imprinted_filter = input$imprinted_filter,
       gencode_locations = input$gencode_locations,
       stringtie_locations = input$stringtie_locations,
@@ -1069,6 +1099,7 @@ server <- function(input, output, session) {
       con = con,
       search = input$search,
       ltr_filter = input$ltr_filter,
+      gag_filter = input$gag_filter,
       imprinted_filter = input$imprinted_filter,
       gencode_locations = input$gencode_locations,
       stringtie_locations = input$stringtie_locations,
@@ -1084,6 +1115,7 @@ server <- function(input, output, session) {
       "  COALESCE(gencode_location, '—') AS gencode_location,",
       "  COALESCE(stringtie_location, '—') AS stringtie_location,",
       "  CASE WHEN LTR THEN COALESCE(LTR_family, 'LTR') ELSE 'None' END AS ltr_label,",
+      "  CASE WHEN gag_gene THEN 'Yes' ELSE 'No' END AS gag_label,",
       "  COALESCE(imprint_status, '—') AS imprint_status",
       "FROM targets",
       where_sql,
@@ -1155,13 +1187,14 @@ server <- function(input, output, session) {
       "gencode_location",
       "stringtie_location",
       "ltr_label",
+      "gag_label",
       "imprint_status"
     )]
     names(display_df) <- c(
       "Row", "tRF", "tRNA Anticodon", "Location",
       "Alignment Score", "Energy", "Gene Name",
       "GENCODE Region", "StringTie Region",
-      "LTR", "Imprint Status"
+      "LTR", "Gag", "Imprint Status"
     )
 
     current_sort <- normalize_table_sort(input$results_table_sort)
@@ -1249,7 +1282,7 @@ server <- function(input, output, session) {
       sprintf(
         paste(
           "SELECT report_row_id, seqnames, start, \"end\", strand, tRF, tRNA_anticodon,",
-          "alignment_score, energy, LTR, LTR_family, LTR_gene_id,",
+          "alignment_score, energy, LTR, LTR_family, LTR_gene_id, gag_gene,",
           "gencode_gene_name, gencode_location, stringtie_location, imprint_status,",
           "query_alignment, match_string, ref_alignment",
           "FROM targets WHERE report_row_id = %d"
