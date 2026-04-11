@@ -18,8 +18,8 @@
 ################################################################################
 
 deploy_trf_target_browser_shinyapps <- function(
-  app_name = "trf-target-browser-poc",
-  app_title = "3'-tRF target explorer",
+  app_name = "trf-target-explorer",
+  app_title = "3'-tRF Target Explorer",
   app_visibility = "public",
   launch_browser = interactive()
 ) {
@@ -108,7 +108,7 @@ deploy_trf_target_browser_shinyapps <- function(
 }
 
 show_trf_target_browser_logs <- function(
-  app_name = "trf-target-browser-poc",
+  app_name = "trf-target-explorer",
   account = NULL,
   entries = 200
 ) {
@@ -126,8 +126,8 @@ show_trf_target_browser_logs <- function(
 
 if (!interactive()) {
   deploy_trf_target_browser_shinyapps(
-    app_name = Sys.getenv("TRF_TARGET_BROWSER_APP_NAME", unset = "trf-target-browser-poc"),
-    app_title = Sys.getenv("TRF_TARGET_BROWSER_APP_TITLE", unset = "3'-tRF target explorer"),
+    app_name = Sys.getenv("TRF_TARGET_BROWSER_APP_NAME", unset = "trf-target-explorer"),
+    app_title = Sys.getenv("TRF_TARGET_BROWSER_APP_TITLE", unset = "3'-tRF Target Explorer"),
     app_visibility = Sys.getenv("TRF_TARGET_BROWSER_APP_VISIBILITY", unset = "public"),
     launch_browser = FALSE
   )

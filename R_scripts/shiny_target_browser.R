@@ -562,8 +562,10 @@ score_limits <- DBI::dbGetQuery(
   con,
   "SELECT FLOOR(MIN(alignment_score)) AS min_score, CEIL(MAX(alignment_score)) AS max_score FROM targets"
 )
-score_min <- as.numeric(score_limits$min_score[[1]])
-score_max <- as.numeric(score_limits$max_score[[1]])
+score_min_raw <- as.numeric(score_limits$min_score[[1]])
+score_max_raw <- as.numeric(score_limits$max_score[[1]])
+score_min <- floor(score_min_raw / 10) * 10
+score_max <- ceiling(score_max_raw / 10) * 10
 gencode_location_counts <- DBI::dbGetQuery(
   con,
   paste(
@@ -603,133 +605,172 @@ stringtie_location_choices <- setNames(
 
 ui <- shiny::fluidPage(
   shiny::tags$head(
-    shiny::tags$title("3'-tRF target explorer"),
+    shiny::tags$title("3'-tRF Target Explorer"),
     shiny::tags$style(shiny::HTML("
       :root {
-        --bg: #f5f2ea;
-        --panel: rgba(255, 255, 255, 0.92);
-        --border: #d9d1c2;
-        --ink: #242424;
-        --muted: #5f666d;
+        --bg: #ffffff;
+        --panel: #ffffff;
+        --border: #dddddd;
+        --ink: #222222;
+        --muted: #666666;
+        --color-trf: #b22425;
+        --color-trf-light: #faf0f0;
         --color-target: #e1b547;
+        --color-target-light: #fdf8ec;
         --color-gencode: #36648b;
-        --color-ltr: #b22425;
-        --hero-bg: #bebebe;
-        --hero-border: #a9a9a9;
-        --hero-ink: #242424;
-        --hero-muted: #4f4f4f;
+        --color-gencode-light: #edf3f8;
+        --accent: #b22425;
       }
       body {
-        background: linear-gradient(180deg, #f6f2ea 0%, #efeadf 100%);
+        background: var(--bg);
         color: var(--ink);
+        font-family: Arial, Helvetica, 'Helvetica Neue', sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
       }
+
+      /* ── Header ── */
       .hero {
-        background: linear-gradient(135deg, rgba(190,190,190,0.98) 0%, rgba(182,182,182,0.98) 100%);
-        border: 1px solid var(--hero-border);
-        border-radius: 18px;
-        padding: 24px 28px 22px 28px;
-        margin: 18px 0 20px 0;
-        box-shadow: 0 14px 32px rgba(80, 80, 80, 0.14);
+        background: var(--bg);
+        border: none;
+        border-radius: 0;
+        padding: 0;
+        margin: 0 0 8px 0;
+        box-shadow: none;
+        border-bottom: 2px solid var(--border);
+      }
+      .hero-inner {
+        padding: 24px 0 18px 0;
       }
       .hero-title {
         margin: 0 0 10px 0;
-        color: var(--hero-ink);
-        font-size: 34px;
-        line-height: 1.12;
+        color: var(--ink);
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 26px;
+        line-height: 1.25;
         font-weight: 700;
       }
-      .hero-title-accent {
-        color: var(--hero-ink);
-      }
       .hero-subtitle {
-        color: var(--hero-muted);
-        font-size: 16px;
+        color: var(--muted);
+        font-size: 13.5px;
         line-height: 1.5;
         margin: 0;
-        max-width: 980px;
+        max-width: 820px;
       }
+      .hero-subtitle em {
+        font-style: italic;
+      }
+
+      /* ── Panels ── */
       .control-panel, .results-panel {
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 20px;
-        margin-bottom: 18px;
-        box-shadow: 0 10px 28px rgba(44, 62, 80, 0.06);
+        border-radius: 8px;
+        padding: 18px;
+        margin-bottom: 16px;
+        box-shadow: none;
       }
       .control-panel {
         position: sticky;
         top: 16px;
       }
       .panel-title {
-        font-size: 13px;
+        font-size: 11.5px;
         font-weight: 700;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
-        color: var(--ink);
+        color: var(--muted);
         margin-bottom: 14px;
+        padding-bottom: 7px;
+        border-bottom: 1px solid #eeeeee;
       }
       .results-summary {
         color: var(--muted);
-        margin-bottom: 12px;
-        font-size: 15px;
+        margin-bottom: 10px;
+        font-size: 13px;
       }
+
+      /* ── Alignment card ── */
       .alignment-card {
-        background: rgba(255, 255, 255, 0.94);
+        background: #ffffff;
         border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 18px;
-        box-shadow: 0 8px 24px rgba(44, 62, 80, 0.05);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+        box-shadow: none;
       }
       .meta {
         margin-bottom: 10px;
-        line-height: 1.8;
+        line-height: 1.85;
       }
       .meta span {
         display: inline-block;
         margin-right: 16px;
-        font-size: 14px;
-        color: #57606a;
+        font-size: 13px;
+        color: var(--muted);
       }
       .trf {
-        font-weight: 600;
-        color: var(--ink) !important;
+        font-weight: 700;
+        color: var(--color-trf) !important;
       }
       .anticodon {
         font-weight: 600;
-        color: #7b6845 !important;
+        color: var(--ink) !important;
       }
       .gene {
-        font-weight: 600;
+        font-weight: 700;
         color: var(--color-gencode) !important;
+        font-style: italic;
+      }
+      .loc {
+        font-variant-numeric: tabular-nums;
+      }
+      .score {
+        font-variant-numeric: tabular-nums;
+      }
+      .ltr-tag {
+        padding: 1px 7px;
+        border-radius: 2px;
+        font-size: 12px !important;
       }
       .ltr-yes {
-        color: var(--color-ltr) !important;
-        font-weight: 600;
+        color: var(--color-trf) !important;
+        font-weight: 700;
+        background: var(--color-trf-light);
       }
       .ltr-no {
-        color: #9a9a9a !important;
+        color: #999999 !important;
+      }
+      .imprinted-tag {
+        padding: 1px 7px;
+        border-radius: 2px;
+        font-size: 12px !important;
       }
       .imprinted-yes {
-        color: #b42318 !important;
-        font-weight: 600;
+        color: #7a5c1f !important;
+        font-weight: 700;
+        background: var(--color-target-light);
       }
       .imprinted-no {
-        color: #9a9a9a !important;
+        color: #999999 !important;
       }
+
+      /* ── Alignment block ── */
       .alignment-block {
-        background: #f6f8fa;
-        padding: 12px;
+        background: #f9f9f9;
+        border: 1px solid #e5e5e5;
+        padding: 12px 14px;
         border-radius: 6px;
         font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
         font-size: 13px;
-        line-height: 1.6;
+        line-height: 1.65;
         overflow-x: auto;
         margin: 0;
       }
       .alignment-grid {
         display: grid;
         grid-template-columns: max-content 1fr;
-        column-gap: 16px;
+        column-gap: 14px;
         row-gap: 0;
         align-items: start;
         min-width: max-content;
@@ -739,22 +780,30 @@ ui <- shiny::fluidPage(
         white-space: pre;
       }
       .alignment-label {
-        color: var(--ink);
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .alignment-label-query {
+        color: var(--color-trf);
+        font-weight: 700;
       }
       .alignment-label-target {
         color: var(--color-target);
-        font-weight: 600;
+        font-weight: 700;
       }
-      .wc { color: #597086; font-weight: bold; }
-      .gu { color: #b68d1c; font-weight: bold; }
-      .mm { color: var(--color-ltr); }
+      .wc { color: var(--color-gencode); font-weight: bold; }
+      .gu { color: var(--color-target); font-weight: bold; }
+      .mm { color: var(--color-trf); }
+
       .empty-state {
-        background: rgba(255,255,255,0.92);
+        background: #fafafa;
         border: 1px dashed var(--border);
-        border-radius: 14px;
-        padding: 24px;
+        border-radius: 8px;
+        padding: 20px;
         color: var(--muted);
       }
+
+      /* ── Page controls ── */
       .page-controls {
         display: flex;
         gap: 8px;
@@ -762,40 +811,129 @@ ui <- shiny::fluidPage(
         flex-wrap: wrap;
         margin-bottom: 12px;
       }
+      .page-controls .btn {
+        background: #ffffff;
+        border: 1px solid var(--border);
+        color: var(--ink);
+        border-radius: 6px;
+        font-size: 12.5px;
+        font-weight: 600;
+        padding: 4px 12px;
+        transition: border-color 0.15s, background 0.15s;
+      }
+      .page-controls .btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: var(--color-trf-light);
+      }
       .page-label {
-        color: #57606a;
-        font-size: 14px;
+        color: var(--muted);
+        font-size: 12.5px;
+        font-variant-numeric: tabular-nums;
       }
       .results-hint,
       .sort-status {
-        color: var(--muted);
-        font-size: 13px;
-        margin-bottom: 8px;
+        color: #999999;
+        font-size: 12px;
+        margin-bottom: 6px;
+      }
+
+      /* ── Table ── */
+      table.dataTable {
+        font-size: 12.5px;
+        border-collapse: collapse;
       }
       table.dataTable thead th {
         cursor: pointer;
+        font-weight: 700;
+        font-size: 11px;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border) !important;
+        padding: 7px 8px !important;
+      }
+      table.dataTable tbody td {
+        padding: 5px 8px !important;
+        border-bottom: 1px solid #f0f0f0 !important;
+      }
+      table.dataTable tbody tr:hover {
+        background: #f7f7f7 !important;
+      }
+      table.dataTable tbody tr.selected,
+      table.dataTable tbody tr.selected td,
+      table.dataTable tbody > tr.selected,
+      table.dataTable tbody > tr.selected td,
+      table.dataTable tbody > tr > td.selected,
+      .dataTable tbody tr.active,
+      .dataTable tbody tr.active td {
+        background: #9cb7d4 !important;
+        background-color: #9cb7d4 !important;
+        color: #ffffff !important;
       }
       table.dataTable thead th.sorted-asc::after {
-        content: ' ▲';
-        color: var(--color-gencode);
-        font-size: 11px;
+        content: ' \\25B2';
+        color: var(--accent);
+        font-size: 9px;
       }
       table.dataTable thead th.sorted-desc::after {
-        content: ' ▼';
-        color: var(--color-gencode);
-        font-size: 11px;
+        content: ' \\25BC';
+        color: var(--accent);
+        font-size: 9px;
+      }
+
+      /* ── Form inputs ── */
+      .form-control, .selectize-input {
+        border-radius: 6px !important;
+        border: 1px solid #cccccc !important;
+        font-size: 13px !important;
+      }
+      .form-control:focus, .selectize-input.focus {
+        border-color: var(--color-gencode) !important;
+        box-shadow: 0 0 0 2px rgba(54, 100, 139, 0.12) !important;
+      }
+      .irs-grid-text.small {
+        display: none;
+      }
+      .irs--shiny .irs-grid-pol.small {
+        height: 4px;
+      }
+      .irs--shiny .irs-bar {
+        background: #9cb7d4 !important;
+        border-top-color: #9cb7d4 !important;
+        border-bottom-color: #9cb7d4 !important;
+      }
+      .irs--shiny .irs-handle {
+        border-color: #9cb7d4 !important;
+      }
+      .irs--shiny .irs-from, .irs--shiny .irs-to, .irs--shiny .irs-single {
+        background-color: #9cb7d4 !important;
+      }
+      label {
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--ink);
+      }
+      hr {
+        border-top: 1px solid #eeeeee;
       }
     "))
   ),
   shiny::div(
     class = "hero",
-    shiny::tags$h1(
-      class = "hero-title",
-      "3'-tRF target explorer"
-    ),
-    shiny::p(
-      class = "hero-subtitle",
-      "Interactive browser for annotated 3'-tRF target sites, designed as a companion to the manuscript \"3'-tRNA fragments target domesticated LTR-retrotransposons\"."
+    shiny::div(
+      class = "hero-inner",
+      shiny::tags$h1(
+        class = "hero-title",
+        shiny::HTML("3&#8242;-tRF Target Explorer")
+      ),
+      shiny::p(
+        class = "hero-subtitle",
+        shiny::HTML(paste0(
+          "Interactive browser for annotated 3&#8242;-tRF target sites. ",
+          "Companion to: <em>3&#8242;-tRNA Fragments Target Domesticated LTR-Retrotransposons</em>."
+        ))
+      )
     )
   ),
   shiny::fluidRow(
@@ -805,7 +943,7 @@ ui <- shiny::fluidPage(
         class = "control-panel",
         shiny::div(class = "panel-title", "Filter Target Sites"),
         shiny::textInput("search", "Search Sites", placeholder = "tRF, gene, coordinates, LTR..."),
-        shiny::sliderInput("score_range", "Alignment Score", min = score_min, max = score_max, value = c(score_min, score_max), step = 1),
+        shiny::sliderInput("score_range", "Alignment Score", min = score_min, max = score_max, value = c(score_min, score_max), step = 5, ticks = TRUE),
         shiny::selectInput("ltr_filter", "LTR Association", choices = c("All sites" = "all", "LTR-associated only" = "ltr", "Non-LTR only" = "no-ltr")),
         shiny::selectInput("imprinted_filter", "Imprinting", choices = c("All genes" = "all", "Imprinted only" = "imprinted", "Not imprinted only" = "non-imprinted")),
         shiny::selectizeInput("gencode_locations", "GENCODE Region", choices = gencode_location_choices, multiple = TRUE, options = list(placeholder = "All GENCODE regions")),
@@ -1000,9 +1138,12 @@ server <- function(input, output, session) {
       rownames = FALSE,
       selection = "single",
       options = list(
-        dom = "tip",
-        pageLength = nrow(display_df),
+        dom = "t",
         scrollX = TRUE,
+        paging = FALSE,
+        info = FALSE,
+        lengthChange = FALSE,
+        searching = FALSE,
         ordering = FALSE
       ),
       callback = DT::JS(sprintf(
