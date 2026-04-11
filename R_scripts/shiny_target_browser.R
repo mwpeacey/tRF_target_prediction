@@ -987,7 +987,6 @@ ui <- shiny::fluidPage(
         shiny::selectInput("imprinted_filter", "Imprinting", choices = c("All genes" = "all", "Imprinted only" = "imprinted", "Not imprinted only" = "non-imprinted")),
         shiny::selectizeInput("gencode_locations", "GENCODE Region", choices = gencode_location_choices, multiple = TRUE, options = list(placeholder = "All GENCODE regions")),
         shiny::selectizeInput("stringtie_locations", "StringTie Region", choices = stringtie_location_choices, multiple = TRUE, options = list(placeholder = "All StringTie regions")),
-        shiny::selectInput("page_size", "Rows per page", choices = c("50", "100", "250", "500"), selected = as.character(default_page_size)),
         shiny::hr()
       )
     ),
@@ -1016,7 +1015,7 @@ server <- function(input, output, session) {
   current_page_data <- shiny::reactiveVal(data.frame())
 
   shiny::observeEvent(
-    list(input$search, input$ltr_filter, input$imprinted_filter, input$gencode_locations, input$stringtie_locations, input$score_range, input$page_size, input$results_table_sort),
+    list(input$search, input$ltr_filter, input$imprinted_filter, input$gencode_locations, input$stringtie_locations, input$score_range, input$results_table_sort),
     {
       current_page(1L)
     },
@@ -1045,7 +1044,7 @@ server <- function(input, output, session) {
   })
 
   total_pages <- shiny::reactive({
-    max(1L, ceiling(filtered_count() / as.integer(input$page_size)))
+    max(1L, ceiling(filtered_count() / as.integer(default_page_size)))
   })
 
   shiny::observe({
@@ -1063,7 +1062,7 @@ server <- function(input, output, session) {
   })
 
   page_query <- shiny::reactive({
-    page_size <- as.integer(input$page_size)
+    page_size <- as.integer(default_page_size)
     offset <- (current_page() - 1L) * page_size
 
     where_sql <- build_where_clause(
@@ -1113,7 +1112,7 @@ server <- function(input, output, session) {
     if (total == 0) {
       "Page 1 of 1"
     } else {
-      page_size <- as.integer(input$page_size)
+      page_size <- as.integer(default_page_size)
       start_idx <- (current_page() - 1L) * page_size + 1L
       end_idx <- min(current_page() * page_size, total)
       sprintf(
