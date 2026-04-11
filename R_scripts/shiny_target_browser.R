@@ -296,20 +296,23 @@ build_alignment_card <- function(row) {
         sprintf("Score: %s | Energy: %s",
                 as_display_string(row$alignment_score[[1]]),
                 as_display_string(row$energy[[1]]))
-      ),
+      )
+    ),
+    shiny::div(
+      class = "meta meta-annotations",
       shiny::tags$span(
         class = paste("ltr-tag", if (identical(row$LTR[[1]], TRUE) || identical(row$LTR[[1]], "TRUE")) "ltr-yes" else "ltr-no"),
         paste0("LTR: ", ltr_info)
       ),
-      imprint_tag,
       shiny::tags$span(
-        class = "region",
-        sprintf(
-          "GENCODE: %s | StringTie: %s",
-          as_display_string(row$gencode_location[[1]]),
-          as_display_string(row$stringtie_location[[1]])
-        )
-      )
+        class = paste("gencode-tag", if (tolower(as_display_string(row$gencode_location[[1]])) == "intergenic") "gencode-intergenic" else "gencode-genic"),
+        paste0("GENCODE: ", as_display_string(row$gencode_location[[1]]))
+      ),
+      shiny::tags$span(
+        class = paste("stringtie-tag", if (tolower(as_display_string(row$stringtie_location[[1]])) == "intergenic") "stringtie-intergenic" else "stringtie-genic"),
+        paste0("StringTie: ", as_display_string(row$stringtie_location[[1]]))
+      ),
+      imprint_tag
     ),
     shiny::div(
       class = "alignment-block",
@@ -679,7 +682,7 @@ ui <- shiny::fluidPage(
         font-weight: 700;
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        color: var(--muted);
+        color: var(--ink);
         margin-bottom: 14px;
         padding-bottom: 7px;
         border-bottom: 1px solid #eeeeee;
@@ -698,10 +701,16 @@ ui <- shiny::fluidPage(
         padding: 16px;
         margin-bottom: 16px;
         box-shadow: none;
+        position: sticky;
+        top: 0;
+        z-index: 10;
       }
       .meta {
-        margin-bottom: 10px;
+        margin-bottom: 4px;
         line-height: 1.85;
+      }
+      .meta-annotations {
+        margin-bottom: 10px;
       }
       .meta span {
         display: inline-block;
@@ -711,7 +720,7 @@ ui <- shiny::fluidPage(
       }
       .trf {
         font-weight: 700;
-        color: var(--color-trf) !important;
+        color: var(--ink) !important;
       }
       .anticodon {
         font-weight: 600;
@@ -719,7 +728,7 @@ ui <- shiny::fluidPage(
       }
       .gene {
         font-weight: 700;
-        color: var(--color-gencode) !important;
+        color: var(--ink) !important;
         font-style: italic;
       }
       .loc {
@@ -747,11 +756,31 @@ ui <- shiny::fluidPage(
         font-size: 12px !important;
       }
       .imprinted-yes {
-        color: #7a5c1f !important;
+        color: var(--ink) !important;
         font-weight: 700;
-        background: var(--color-target-light);
       }
       .imprinted-no {
+        color: #999999 !important;
+      }
+      .gencode-tag, .stringtie-tag {
+        padding: 1px 7px;
+        border-radius: 2px;
+        font-size: 12px !important;
+      }
+      .gencode-genic {
+        color: #4a6f8a !important;
+        font-weight: 700;
+        background: #edf3f8;
+      }
+      .gencode-intergenic {
+        color: #999999 !important;
+      }
+      .stringtie-genic {
+        color: #7a6520 !important;
+        font-weight: 700;
+        background: #fdf6e3;
+      }
+      .stringtie-intergenic {
         color: #999999 !important;
       }
 
@@ -784,11 +813,11 @@ ui <- shiny::fluidPage(
         font-weight: 600;
       }
       .alignment-label-query {
-        color: var(--color-trf);
+        color: var(--ink);
         font-weight: 700;
       }
       .alignment-label-target {
-        color: var(--color-target);
+        color: var(--ink);
         font-weight: 700;
       }
       .wc { color: var(--color-gencode); font-weight: bold; }
@@ -888,6 +917,16 @@ ui <- shiny::fluidPage(
         border: 1px solid #cccccc !important;
         font-size: 13px !important;
       }
+      .selectize-control.multi .selectize-input,
+      .selectize-control.single .selectize-input,
+      .selectize-input,
+      .selectize-input.items {
+        border: 1px solid #cccccc !important;
+        box-shadow: none !important;
+      }
+      .selectize-dropdown {
+        border: 1px solid #cccccc !important;
+      }
       .form-control:focus, .selectize-input.focus {
         border-color: var(--color-gencode) !important;
         box-shadow: 0 0 0 2px rgba(54, 100, 139, 0.12) !important;
@@ -959,7 +998,6 @@ ui <- shiny::fluidPage(
         class = "results-panel",
         shiny::div(class = "panel-title", "Browse Alignments"),
         shiny::div(class = "results-summary", shiny::textOutput("results_summary")),
-        shiny::div(class = "results-hint", "Click a column heading to sort the full filtered result set. Click again to reverse it, and a third time to return to original order."),
         shiny::div(class = "sort-status", shiny::textOutput("sort_status")),
         shiny::div(
           class = "page-controls",
@@ -1120,6 +1158,12 @@ server <- function(input, output, session) {
       "ltr_label",
       "imprint_status"
     )]
+    names(display_df) <- c(
+      "Row", "tRF", "tRNA Anticodon", "Location",
+      "Alignment Score", "Energy", "Gene Name",
+      "GENCODE Region", "StringTie Region",
+      "LTR", "Imprint Status"
+    )
 
     current_sort <- normalize_table_sort(input$results_table_sort)
     current_col_js <- if (is.null(current_sort)) {
@@ -1140,6 +1184,7 @@ server <- function(input, output, session) {
       options = list(
         dom = "t",
         scrollX = TRUE,
+        scrollY = "60vh",
         paging = FALSE,
         info = FALSE,
         lengthChange = FALSE,
@@ -1176,8 +1221,8 @@ server <- function(input, output, session) {
         current_dir_js
       ))
     )
-    table_widget <- DT::formatRound(table_widget, "alignment_score", 0)
-    DT::formatRound(table_widget, "energy", 2)
+    table_widget <- DT::formatRound(table_widget, "Alignment Score", 0)
+    DT::formatRound(table_widget, "Energy", 2)
   }, server = FALSE)
 
   selected_row_id <- shiny::reactive({
