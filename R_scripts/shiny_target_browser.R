@@ -1327,7 +1327,56 @@ server <- function(input, output, session) {
 
   output$download_csv <- shiny::downloadHandler(
     filename = function() {
-      paste0("trf_targets_filtered_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")
+      parts <- c("trf_targets")
+
+      if (!is.null(input$search) && nzchar(trimws(input$search))) {
+        slug <- tolower(gsub("[^A-Za-z0-9]+", "-", trimws(input$search)))
+        slug <- sub("^-+|-+$", "", slug)
+        parts <- c(parts, slug)
+      }
+
+      if (identical(input$ltr_filter, "ltr")) {
+        parts <- c(parts, "LTR")
+      } else if (identical(input$ltr_filter, "no-ltr")) {
+        parts <- c(parts, "noLTR")
+      }
+
+      if (identical(input$gag_filter, "gag")) {
+        parts <- c(parts, "gag")
+      } else if (identical(input$gag_filter, "no-gag")) {
+        parts <- c(parts, "noGag")
+      }
+
+      if (identical(input$imprinted_filter, "imprinted")) {
+        parts <- c(parts, "imprinted")
+      } else if (identical(input$imprinted_filter, "non-imprinted")) {
+        parts <- c(parts, "notImprinted")
+      }
+
+      if (!is.null(input$gencode_locations) && length(input$gencode_locations) > 0L) {
+        gc_slug <- tolower(gsub("[^A-Za-z0-9]+", "-", paste(input$gencode_locations, collapse = "-")))
+        parts <- c(parts, paste0("gencode-", gc_slug))
+      }
+
+      if (!is.null(input$stringtie_locations) && length(input$stringtie_locations) > 0L) {
+        st_slug <- tolower(gsub("[^A-Za-z0-9]+", "-", paste(input$stringtie_locations, collapse = "-")))
+        parts <- c(parts, paste0("stringtie-", st_slug))
+      }
+
+      score_range <- input$score_range
+      if (!is.null(score_range)) {
+        score_lo <- score_range[1]
+        score_hi <- score_range[2]
+        if (score_lo > score_min || score_hi < score_max) {
+          parts <- c(parts, sprintf("score%s-%s", score_lo, score_hi))
+        }
+      }
+
+      if (length(parts) == 1L) {
+        parts <- c(parts, "all")
+      }
+
+      paste0(paste(parts, collapse = "_"), ".csv")
     },
     content = function(file) {
       where_sql <- build_where_clause(
