@@ -939,6 +939,31 @@ ui <- shiny::fluidPage(
         font-size: 9px;
       }
 
+      /* ── Panel header with export ── */
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+      }
+      .panel-header .panel-title {
+        margin-bottom: 0;
+      }
+      #download_csv {
+        background: #ffffff;
+        border: 1px solid var(--border);
+        color: var(--ink);
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 4px 14px;
+        transition: border-color 0.15s, background 0.15s;
+      }
+      #download_csv:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: var(--color-trf-light);
+      }
+
       /* ── Form inputs ── */
       .form-control, .selectize-input {
         border-radius: 6px !important;
@@ -998,7 +1023,7 @@ ui <- shiny::fluidPage(
         class = "hero-subtitle",
         shiny::HTML(paste0(
           "Interactive browser for annotated 3&#8242;-tRF target sites. ",
-          "Companion to: <em>3&#8242;-tRNA Fragments Target Domesticated LTR-Retrotransposons</em>."
+          "Companion to: <em>3&#8242;-tRNA Fragments target domesticated LTR-Retrotransposons</em>."
         ))
       )
     )
@@ -1024,7 +1049,11 @@ ui <- shiny::fluidPage(
       shiny::uiOutput("alignment_detail"),
       shiny::div(
         class = "results-panel",
-        shiny::div(class = "panel-title", "Browse Alignments"),
+        shiny::div(
+          class = "panel-header",
+          shiny::div(class = "panel-title", "Browse Alignments"),
+          shiny::downloadButton("download_csv", "Export CSV")
+        ),
         shiny::div(class = "results-summary", shiny::textOutput("results_summary")),
         shiny::div(class = "sort-status", shiny::textOutput("sort_status")),
         shiny::div(
@@ -1295,6 +1324,40 @@ server <- function(input, output, session) {
   output$alignment_detail <- shiny::renderUI({
     build_alignment_card(selected_row())
   })
+
+  output$download_csv <- shiny::downloadHandler(
+    filename = function() {
+      paste0("trf_targets_filtered_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")
+    },
+    content = function(file) {
+      where_sql <- build_where_clause(
+        con = con,
+        search = input$search,
+        ltr_filter = input$ltr_filter,
+        gag_filter = input$gag_filter,
+        imprinted_filter = input$imprinted_filter,
+        gencode_locations = input$gencode_locations,
+        stringtie_locations = input$stringtie_locations,
+        score_min = input$score_range[1],
+        score_max = input$score_range[2]
+      )
+
+      sql <- paste(
+        "SELECT",
+        "  tRF, tRNA_anticodon, seqnames, start, \"end\", strand,",
+        "  alignment_score, energy,",
+        "  LTR, LTR_family, LTR_gene_id, gag_gene,",
+        "  gencode_gene_name, gencode_location,",
+        "  stringtie_location, imprint_status",
+        "FROM targets",
+        where_sql,
+        sort_clause(input$results_table_sort)
+      )
+
+      result <- DBI::dbGetQuery(con, sql)
+      utils::write.csv(result, file, row.names = FALSE, na = "")
+    }
+  )
 }
 
 app <- shiny::shinyApp(ui = ui, server = server)
