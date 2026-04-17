@@ -5,60 +5,81 @@ Select a random subset of non-overlapping 10 kbp windows from a genome,
 excluding windows with high N content.
 
 Generates non-overlapping windows (step = window size) to avoid double-counting
-hits in the overlap zones used by the full scanning pipeline. Windows where >50%
-of bases are N are excluded before sampling. A random fraction of the remaining
-windows is selected and written as a BED file for `bedtools getfasta`.
+hits in the overlap zones used by the full scanning pipeline. The genome FASTA
+is read in a single pass to compute per-window N fractions efficiently. Windows
+where >50% of bases are N are excluded before sampling. A random fraction of the
+remaining windows is selected and written as a BED file for `bedtools getfasta`.
 
 Usage:
     python select_windows.py <genome.fa> <output.bed> \
         [--fraction 0.2] [--window 10000] [--max-n-frac 0.5] [--seed 42]
 
 Requirements:
-    Python 3.6+, samtools (for indexing if .fai missing)
+    Python 3.6+
 """
 
 import argparse
-import os
 import random
-import subprocess
 import sys
 
 
-def read_fai(fai_path):
-    """Read chromosome names and lengths from a .fai index."""
-    chroms = []
-    with open(fai_path) as f:
+def parse_fasta_windows(genome_fa, window_size, max_n_frac):
+    """
+    Read genome FASTA in a single pass. For each chromosome, accumulate
+    sequence and evaluate non-overlapping windows on the fly.
+
+    Returns a list of eligible (chrom, start, end) tuples and counts of
+    total/excluded windows.
+    """
+    eligible = []
+    n_total = 0
+    n_excluded = 0
+
+    current_chrom = None
+    seq_buf = []
+    buf_len = 0
+
+    def flush_windows(chrom, seq_buf, buf_len):
+        """Process all complete windows from the accumulated sequence."""
+        nonlocal eligible, n_total, n_excluded
+        seq = "".join(seq_buf).upper()
+        start = 0
+        while start + window_size <= buf_len:
+            chunk = seq[start : start + window_size]
+            n_frac = chunk.count("N") / window_size
+            n_total += 1
+            if n_frac <= max_n_frac:
+                eligible.append((chrom, start, start + window_size))
+            else:
+                n_excluded += 1
+            start += window_size
+
+    with open(genome_fa) as f:
         for line in f:
-            fields = line.strip().split("\t")
-            chroms.append((fields[0], int(fields[1])))
-    return chroms
+            if line.startswith(">"):
+                # Process previous chromosome
+                if current_chrom is not None:
+                    flush_windows(current_chrom, seq_buf, buf_len)
+                current_chrom = line[1:].split()[0]
+                seq_buf = []
+                buf_len = 0
+            else:
+                stripped = line.rstrip("\n")
+                seq_buf.append(stripped)
+                buf_len += len(stripped)
 
+        # Final chromosome
+        if current_chrom is not None:
+            flush_windows(current_chrom, seq_buf, buf_len)
 
-def get_n_fraction(genome_fa, chrom, start, end):
-    """
-    Use samtools faidx to extract a region and compute its N fraction.
-    """
-    region = f"{chrom}:{start + 1}-{end}"  # samtools uses 1-based coordinates
-    result = subprocess.run(
-        ["samtools", "faidx", genome_fa, region],
-        capture_output=True,
-        text=True,
-    )
-    seq = "".join(
-        line.strip().upper()
-        for line in result.stdout.split("\n")
-        if not line.startswith(">")
-    )
-    if len(seq) == 0:
-        return 1.0
-    return seq.count("N") / len(seq)
+    return eligible, n_total, n_excluded
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Sample non-overlapping genomic windows, filtering high-N regions."
     )
-    parser.add_argument("genome_fa", help="Path to genome FASTA (must have .fai index)")
+    parser.add_argument("genome_fa", help="Path to genome FASTA")
     parser.add_argument("output_bed", help="Output BED file of selected windows")
     parser.add_argument(
         "--fraction",
@@ -84,54 +105,17 @@ def main():
     args = parser.parse_args()
 
     random.seed(args.seed)
-    window = args.window
-    fai_path = args.genome_fa + ".fai"
 
-    # Ensure genome is indexed
-    if not os.path.exists(fai_path):
-        print("Indexing genome...", file=sys.stderr)
-        subprocess.run(["samtools", "faidx", args.genome_fa], check=True)
+    print("Reading genome and filtering windows...", file=sys.stderr)
 
-    chroms = read_fai(fai_path)
-
-    # Generate all non-overlapping full-size windows
-    all_windows = []
-    for chrom, length in chroms:
-        start = 0
-        while start + window <= length:
-            all_windows.append((chrom, start, start + window))
-            start += window
-
-    print(
-        f"Generated {len(all_windows)} non-overlapping {window} bp windows",
-        file=sys.stderr,
+    eligible, n_total, n_excluded = parse_fasta_windows(
+        args.genome_fa, args.window, args.max_n_frac
     )
 
-    # Filter out high-N windows
     print(
-        f"Filtering windows with >{args.max_n_frac * 100:.0f}% N content...",
-        file=sys.stderr,
-    )
-    eligible = []
-    n_excluded = 0
-    for i, (chrom, start, end) in enumerate(all_windows):
-        n_frac = get_n_fraction(args.genome_fa, chrom, start, end)
-        if n_frac <= args.max_n_frac:
-            eligible.append((chrom, start, end))
-        else:
-            n_excluded += 1
-
-        # Progress reporting
-        if (i + 1) % 10000 == 0:
-            print(
-                f"  Checked {i + 1}/{len(all_windows)} windows, "
-                f"excluded {n_excluded} so far...",
-                file=sys.stderr,
-            )
-
-    print(
-        f"Excluded {n_excluded} windows for N content, "
-        f"{len(eligible)} eligible remain",
+        f"Generated {n_total} non-overlapping {args.window} bp windows, "
+        f"excluded {n_excluded} for >{args.max_n_frac * 100:.0f}% N content, "
+        f"{len(eligible)} eligible",
         file=sys.stderr,
     )
 
