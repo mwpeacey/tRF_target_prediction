@@ -13,8 +13,8 @@
 ##    (unshuffled) sequences (parallel across tRFs).
 ## 2. Once setup completes, submits permutation_iteration.sh as a SLURM array
 ##    job (one task per shuffle iteration, each parallelised across tRFs).
-## 3. Once all iterations complete, consolidates hit counts and submits the
-##    R analysis script to compute Z-scores and p-values.
+## 3. Once all iterations complete, consolidates hit counts into a single TSV.
+##    Run permutation_zscore.R locally to compute Z-scores and p-values.
 ##
 ## Usage:
 ##   sbatch run_permutation.sh <scripts_dir> <genome.fa> <sRNA.fa> \
@@ -88,26 +88,28 @@ ITER_JOB=$(sbatch --parsable \
 
 echo "Submitted iteration array job: ${ITER_JOB} (${N_ITER} tasks)"
 
-# ── Step 3: Consolidate per-iteration hit counts, then run analysis ───────
+# ── Step 3: Consolidate per-iteration hit counts (depends on all iterations) ─
 
-ANALYSIS_JOB=$(sbatch --parsable \
+CONSOLIDATE_JOB=$(sbatch --parsable \
   --dependency=afterok:${ITER_JOB} \
   --cpus-per-task=1 \
-  --mem=4G \
-  --time=1:00:00 \
-  --job-name=perm_analysis \
-  --output="${OUTDIR}/permutation_analysis_output.txt" \
-  --error="${OUTDIR}/permutation_analysis_output.txt" \
-  --wrap="echo -e 'iteration\thits' > ${OUTDIR}/shuffled_hits.tsv && cat ${OUTDIR}/iterations/hits_*.txt | sort -n >> ${OUTDIR}/shuffled_hits.tsv && Rscript ${SCRIPTS}/miranda/permutation_test/permutation_zscore.R ${OUTDIR}"
+  --mem=1G \
+  --time=0:10:00 \
+  --job-name=perm_consolidate \
+  --output="${OUTDIR}/permutation_consolidate_output.txt" \
+  --error="${OUTDIR}/permutation_consolidate_output.txt" \
+  --wrap="echo -e 'iteration\thits' > ${OUTDIR}/shuffled_hits.tsv && cat ${OUTDIR}/iterations/hits_*.txt | sort -n >> ${OUTDIR}/shuffled_hits.tsv && echo 'Consolidation complete.'"
 )
 
-echo "Submitted analysis job: ${ANALYSIS_JOB} (depends on ${ITER_JOB})"
+echo "Submitted consolidation job: ${CONSOLIDATE_JOB} (depends on ${ITER_JOB})"
 
 echo ""
 echo "Pipeline submitted. Monitor with:"
 echo "  squeue -u \$USER"
 echo ""
-echo "Results will be written to:"
-echo "  ${OUTDIR}/observed_hits.txt       (real hit count)"
-echo "  ${OUTDIR}/shuffled_hits.tsv       (per-iteration shuffled counts)"
-echo "  ${OUTDIR}/permutation_results.csv (Z-score, p-values)"
+echo "Once complete, run the R analysis locally:"
+echo "  Rscript ${SCRIPTS}/miranda/permutation_test/permutation_zscore.R ${OUTDIR}"
+echo ""
+echo "Output files:"
+echo "  ${OUTDIR}/observed_hits.txt   (real hit count)"
+echo "  ${OUTDIR}/shuffled_hits.tsv   (per-iteration shuffled counts)"
