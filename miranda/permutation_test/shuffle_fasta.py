@@ -16,7 +16,7 @@ Usage:
     python shuffle_fasta.py <input.fa> <output.fa> [--seed 42] [--klet 2]
 
 Requirements:
-    pip install ushuffle biopython
+    ushuffle (conda install -c bioconda ushuffle)
 """
 
 import argparse
@@ -24,10 +24,32 @@ import random
 import re
 import sys
 
-from Bio import SeqIO
-from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 import ushuffle
+
+
+def parse_fasta(filepath):
+    """Yield (header, sequence) tuples from a FASTA file."""
+    header = None
+    seq_parts = []
+    with open(filepath) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if line.startswith(">"):
+                if header is not None:
+                    yield header, "".join(seq_parts)
+                header = line[1:]
+                seq_parts = []
+            else:
+                seq_parts.append(line)
+    if header is not None:
+        yield header, "".join(seq_parts)
+
+
+def write_fasta(handle, header, sequence, line_width=80):
+    """Write a single FASTA record with wrapped sequence lines."""
+    handle.write(f">{header}\n")
+    for i in range(0, len(sequence), line_width):
+        handle.write(sequence[i : i + line_width] + "\n")
 
 
 def shuffle_segment(seq_str, k=2):
@@ -84,23 +106,18 @@ def main():
     n_shuffled = 0
 
     with open(args.output_fasta, "w") as out_handle:
-        for record in SeqIO.parse(args.input_fasta, "fasta"):
-            seq_str = str(record.seq).upper()
+        for header, seq_str in parse_fasta(args.input_fasta):
+            seq_str = seq_str.upper()
             n_count = seq_str.count("N")
             n_frac = n_count / len(seq_str) if len(seq_str) > 0 else 1.0
 
             if n_frac > 0.5:
                 # Mostly N — write unchanged
-                SeqIO.write([record], out_handle, "fasta")
+                write_fasta(out_handle, header, seq_str)
                 n_skipped += 1
             else:
                 shuffled_seq = shuffle_with_ns(seq_str, k=args.klet)
-                new_record = SeqRecord(
-                    Seq(shuffled_seq),
-                    id=record.id,
-                    description=record.description,
-                )
-                SeqIO.write([new_record], out_handle, "fasta")
+                write_fasta(out_handle, header, shuffled_seq)
                 n_shuffled += 1
 
     print(
