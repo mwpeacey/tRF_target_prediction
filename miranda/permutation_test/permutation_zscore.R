@@ -2,23 +2,11 @@
 # permutation_zscore.R
 #
 # Computes Z-score and p-values for the genome-shuffling permutation test.
-#
-# Reads:
-#   <outdir>/observed_hits.txt    - single integer: real hit count
-#   <outdir>/shuffled_hits.tsv    - two columns: iteration, hits
-#
-# Writes:
-#   <outdir>/permutation_results.csv
-#   <outdir>/permutation_histogram.pdf
-#
-# Usage:
-#   Rscript permutation_zscore.R <outdir>
 ################################################################################
 
 library(tidyverse)
 
-args <- commandArgs(TRUE)
-outdir <- args[1]
+outdir = 'import/miranda/miranda_permutation'
 
 # ── Load data ────────────────────────────────────────────────────────────────
 
