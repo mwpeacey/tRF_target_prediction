@@ -56,9 +56,12 @@ def shuffle_segment(seq_str, k=2):
     """Shuffle a contiguous ACGT segment preserving k-mer composition."""
     if len(seq_str) < k + 1:
         return seq_str
-    seq_bytes = seq_str.upper().encode("ascii")
-    shuffled = ushuffle.shuffle(seq_bytes, len(seq_bytes), k)
-    return shuffled.decode("ascii")
+    seq_upper = seq_str.upper()
+    shuffled = ushuffle.shuffle(seq_upper, len(seq_upper), k)
+    # Handle both str and bytes return types across ushuffle versions
+    if isinstance(shuffled, bytes):
+        return shuffled.decode("ascii")
+    return shuffled
 
 
 def shuffle_with_ns(seq_str, k=2):
