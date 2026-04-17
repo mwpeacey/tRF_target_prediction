@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=perm_setup
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=48G
+#SBATCH --cpus-per-task=64
+#SBATCH --mem=16G
 #SBATCH --time=48:00:00
 #SBATCH --output=permutation_setup_output.txt
 #SBATCH --error=permutation_setup_output.txt
