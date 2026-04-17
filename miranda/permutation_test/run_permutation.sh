@@ -18,28 +18,28 @@
 ##
 ## Usage:
 ##   sbatch run_permutation.sh <scripts_dir> <genome.fa> <sRNA.fa> \
-##          <out_dir> <run_mode> [n_iterations] [fraction] [seed]
+##          <out_dir> <run_mode> [n_iterations] [fraction] [score_cutoff] [seed]
 ##
-## Example (development — 5% of genome, 10 iterations):
+## Example (development — 5% of genome, 10 iterations, score ≥ 90):
 ##   sbatch run_permutation.sh \
 ##     /grid/schorn/home/mpeacey/scripts/tRF_target_prediction \
 ##     /grid/schorn/home/mpeacey/genomes/mm10/mm10.fa \
 ##     /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/import/mm10_tRF3b.fasta \
 ##     /grid/schorn/home/mpeacey/permutation_test \
-##     tRF 10 0.05 42
+##     tRF 10 0.05 90 42
 ##
-## Example (production — 20% of genome, 100 iterations):
+## Example (production — 20% of genome, 100 iterations, score ≥ 80):
 ##   sbatch run_permutation.sh \
 ##     /grid/schorn/home/mpeacey/scripts/tRF_target_prediction \
 ##     /grid/schorn/home/mpeacey/genomes/mm10/mm10.fa \
 ##     /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/import/mm10_tRF3b.fasta \
 ##     /grid/schorn/home/mpeacey/permutation_test \
-##     tRF 100 0.20 42
+##     tRF 100 0.20 80 42
 
 echo "Permutation test master script started on $(date)"
 
 if [ "$#" -lt 5 ]; then
-  echo "Usage: $0 <scripts_dir> <genome.fa> <sRNA.fa> <out_dir> <run_mode> [n_iterations] [fraction] [seed]" >&2
+  echo "Usage: $0 <scripts_dir> <genome.fa> <sRNA.fa> <out_dir> <run_mode> [n_iterations] [fraction] [score_cutoff] [seed]" >&2
   exit 1
 fi
 
@@ -50,7 +50,8 @@ OUTDIR="$4"
 RUN_MODE="$5"
 N_ITER="${6:-100}"
 FRACTION="${7:-0.05}"
-SEED="${8:-42}"
+SCORE_CUTOFF="${8:-90}"
+SEED="${9:-42}"
 
 mkdir -p "${OUTDIR}/iterations"
 
@@ -62,6 +63,7 @@ echo "  Output:     ${OUTDIR}"
 echo "  Run mode:   ${RUN_MODE}"
 echo "  Iterations: ${N_ITER}"
 echo "  Fraction:   ${FRACTION}"
+echo "  Score:      ${SCORE_CUTOFF}"
 echo "  Seed:       ${SEED}"
 
 # ── Step 1: Submit setup ───────────────────────────────────────────────────
@@ -70,7 +72,7 @@ SETUP_JOB=$(sbatch --parsable \
   --output="${OUTDIR}/permutation_setup_output.txt" \
   --error="${OUTDIR}/permutation_setup_output.txt" \
   "${SCRIPTS}/miranda/permutation_test/permutation_setup.sh" \
-  "$SCRIPTS" "$GENOME_FA" "$SRNA_FA" "$OUTDIR" "$RUN_MODE" "$FRACTION" "$SEED"
+  "$SCRIPTS" "$GENOME_FA" "$SRNA_FA" "$OUTDIR" "$RUN_MODE" "$FRACTION" "$SCORE_CUTOFF" "$SEED"
 )
 
 echo "Submitted setup job: ${SETUP_JOB}"
@@ -83,7 +85,7 @@ ITER_JOB=$(sbatch --parsable \
   --output="${OUTDIR}/iterations/perm_iter_%a_output.txt" \
   --error="${OUTDIR}/iterations/perm_iter_%a_output.txt" \
   "${SCRIPTS}/miranda/permutation_test/permutation_iteration.sh" \
-  "$SCRIPTS" "$SRNA_FA" "$OUTDIR" "$RUN_MODE"
+  "$SCRIPTS" "$SRNA_FA" "$OUTDIR" "$RUN_MODE" "$SCORE_CUTOFF"
 )
 
 echo "Submitted iteration array job: ${ITER_JOB} (${N_ITER} tasks)"

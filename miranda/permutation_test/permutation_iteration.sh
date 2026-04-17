@@ -21,6 +21,7 @@
 ## $2 : Small RNA FASTA
 ## $3 : Output directory (same as permutation_setup.sh)
 ## $4 : Run mode ("tRF" or "miRNA")
+## $5 : miRanda alignment score cutoff (default: 90)
 
 echo "Permutation iteration started on $(date)"
 
@@ -33,6 +34,7 @@ SCRIPTS="$1"
 SRNA_FA="$2"
 OUTDIR="$3"
 RUN_MODE="$4"
+SCORE_CUTOFF="${5:-90}"
 
 N_CORES=${SLURM_CPUS_PER_TASK:-16}
 
@@ -62,11 +64,9 @@ seqkit seq -r -p "${ITER_DIR}/shuffled_windows.fa" \
 # ── 2. Run miRanda (parallel across tRFs) ────────────────────────────────
 
 if [ "$RUN_MODE" == "tRF" ]; then
-  SC=90.0
-  MIRANDA_FLAGS="-sc ${SC} -en 0 -scale 1.0 -loose"
+  MIRANDA_FLAGS="-sc ${SCORE_CUTOFF} -en 0 -scale 1.0 -loose"
 elif [ "$RUN_MODE" == "miRNA" ]; then
-  SC=150.0
-  MIRANDA_FLAGS="-sc ${SC} -en 0"
+  MIRANDA_FLAGS="-sc ${SCORE_CUTOFF} -en 0"
 else
   echo "ERROR: RUN_MODE must be 'tRF' or 'miRNA'" >&2
   exit 1

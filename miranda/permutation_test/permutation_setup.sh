@@ -27,12 +27,13 @@
 ## $4 : Output directory for permutation test
 ## $5 : Run mode ("tRF" or "miRNA")
 ## $6 : Genome fraction to sample (e.g. 0.05 for 5%, default: 0.05)
-## $7 : Random seed (default: 42)
+## $7 : miRanda alignment score cutoff (default: 90)
+## $8 : Random seed (default: 42)
 
 echo "Permutation setup started on $(date)"
 
 if [ "$#" -lt 5 ]; then
-  echo "Usage: $0 <scripts_dir> <genome.fa> <sRNA.fa> <out_dir> <run_mode> [fraction] [seed]" >&2
+  echo "Usage: $0 <scripts_dir> <genome.fa> <sRNA.fa> <out_dir> <run_mode> [fraction] [score_cutoff] [seed]" >&2
   exit 1
 fi
 
@@ -42,7 +43,8 @@ SRNA_FA="$3"
 OUTDIR="$4"
 RUN_MODE="$5"
 FRACTION="${6:-0.05}"
-SEED="${7:-42}"
+SCORE_CUTOFF="${7:-90}"
+SEED="${8:-42}"
 
 N_CORES=${SLURM_CPUS_PER_TASK:-16}
 
@@ -99,11 +101,9 @@ echo "[$(date)] Split into ${N_SRNAS} individual sRNA files."
 echo "[$(date)] Running miRanda on real (unshuffled) windows (${N_CORES} cores)..."
 
 if [ "$RUN_MODE" == "tRF" ]; then
-  SC=90.0
-  MIRANDA_FLAGS="-sc ${SC} -en 0 -scale 1.0 -loose"
+  MIRANDA_FLAGS="-sc ${SCORE_CUTOFF} -en 0 -scale 1.0 -loose"
 elif [ "$RUN_MODE" == "miRNA" ]; then
-  SC=150.0
-  MIRANDA_FLAGS="-sc ${SC} -en 0"
+  MIRANDA_FLAGS="-sc ${SCORE_CUTOFF} -en 0"
 else
   echo "ERROR: RUN_MODE must be 'tRF' or 'miRNA', got '${RUN_MODE}'" >&2
   exit 1
