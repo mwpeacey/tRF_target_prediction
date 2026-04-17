@@ -10,28 +10,36 @@
 ## Master script for the genome-shuffling permutation test.
 ##
 ## 1. Submits permutation_setup.sh to select windows and run miRanda on real
-##    (unshuffled) sequences.
+##    (unshuffled) sequences (parallel across tRFs).
 ## 2. Once setup completes, submits permutation_iteration.sh as a SLURM array
-##    job (one task per shuffle iteration).
-## 3. Once all iterations complete, submits the R analysis script to compute
-##    Z-scores and p-values.
+##    job (one task per shuffle iteration, each parallelised across tRFs).
+## 3. Once all iterations complete, consolidates hit counts and submits the
+##    R analysis script to compute Z-scores and p-values.
 ##
 ## Usage:
 ##   sbatch run_permutation.sh <scripts_dir> <genome.fa> <sRNA.fa> \
-##          <out_dir> <run_mode> [n_iterations] [seed]
+##          <out_dir> <run_mode> [n_iterations] [fraction] [seed]
 ##
-## Example:
+## Example (development — 5% of genome, 10 iterations):
 ##   sbatch run_permutation.sh \
 ##     /grid/schorn/home/mpeacey/scripts/tRF_target_prediction \
 ##     /grid/schorn/home/mpeacey/genomes/mm10/mm10.fa \
 ##     /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/import/mm10_tRF3b.fasta \
 ##     /grid/schorn/home/mpeacey/permutation_test \
-##     tRF 100 42
+##     tRF 10 0.05 42
+##
+## Example (production — 20% of genome, 100 iterations):
+##   sbatch run_permutation.sh \
+##     /grid/schorn/home/mpeacey/scripts/tRF_target_prediction \
+##     /grid/schorn/home/mpeacey/genomes/mm10/mm10.fa \
+##     /grid/schorn/home/mpeacey/scripts/tRF_target_prediction/import/mm10_tRF3b.fasta \
+##     /grid/schorn/home/mpeacey/permutation_test \
+##     tRF 100 0.20 42
 
 echo "Permutation test master script started on $(date)"
 
 if [ "$#" -lt 5 ]; then
-  echo "Usage: $0 <scripts_dir> <genome.fa> <sRNA.fa> <out_dir> <run_mode> [n_iterations] [seed]" >&2
+  echo "Usage: $0 <scripts_dir> <genome.fa> <sRNA.fa> <out_dir> <run_mode> [n_iterations] [fraction] [seed]" >&2
   exit 1
 fi
 
@@ -41,7 +49,8 @@ SRNA_FA="$3"
 OUTDIR="$4"
 RUN_MODE="$5"
 N_ITER="${6:-100}"
-SEED="${7:-42}"
+FRACTION="${7:-0.05}"
+SEED="${8:-42}"
 
 mkdir -p "${OUTDIR}/iterations"
 
@@ -52,6 +61,7 @@ echo "  sRNA FASTA: ${SRNA_FA}"
 echo "  Output:     ${OUTDIR}"
 echo "  Run mode:   ${RUN_MODE}"
 echo "  Iterations: ${N_ITER}"
+echo "  Fraction:   ${FRACTION}"
 echo "  Seed:       ${SEED}"
 
 # ── Step 1: Submit setup ───────────────────────────────────────────────────
@@ -60,7 +70,7 @@ SETUP_JOB=$(sbatch --parsable \
   --output="${OUTDIR}/permutation_setup_output.txt" \
   --error="${OUTDIR}/permutation_setup_output.txt" \
   "${SCRIPTS}/miranda/permutation_test/permutation_setup.sh" \
-  "$SCRIPTS" "$GENOME_FA" "$SRNA_FA" "$OUTDIR" "$RUN_MODE" "$SEED"
+  "$SCRIPTS" "$GENOME_FA" "$SRNA_FA" "$OUTDIR" "$RUN_MODE" "$FRACTION" "$SEED"
 )
 
 echo "Submitted setup job: ${SETUP_JOB}"

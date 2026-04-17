@@ -1,20 +1,20 @@
 #!/bin/bash
 #SBATCH --job-name=perm_iter
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=16
 #SBATCH --mem=48G
 #SBATCH --time=48:00:00
 
 ## Description
 ## A single iteration of the permutation test. Shuffles the selected window
-## sequences (dinucleotide-preserving), runs miRanda on both strands, and
-## writes the total hit count to the results directory.
+## sequences (dinucleotide-preserving), runs miRanda on both strands in
+## parallel (one process per tRF), and writes the total hit count.
 ##
 ## Designed to be submitted as a SLURM array job by run_permutation.sh.
 ## The iteration number comes from SLURM_ARRAY_TASK_ID.
 
 ## Requirements
-## miranda (1.9), seqkit (2.10.0)
-## Python 3.6+ with biopython, ushuffle
+## miranda (1.9), seqkit (2.10.0), GNU parallel
+## Python 3.6+ with ushuffle
 
 ## Inputs
 ## $1 : Scripts directory
@@ -34,6 +34,8 @@ SRNA_FA="$2"
 OUTDIR="$3"
 RUN_MODE="$4"
 
+N_CORES=${SLURM_CPUS_PER_TASK:-16}
+
 ITER=${SLURM_ARRAY_TASK_ID}
 if [ -z "$ITER" ]; then
   echo "ERROR: SLURM_ARRAY_TASK_ID not set. Submit as an array job." >&2
@@ -43,7 +45,7 @@ fi
 ITER_DIR="${OUTDIR}/iterations/iter_${ITER}"
 mkdir -p "$ITER_DIR"
 
-# ── 1. Shuffle window sequences ────────────────────────────────────────────
+# ── 1. Shuffle window sequences ──────────────────────────────────────────
 
 echo "[$(date)] Iteration ${ITER}: shuffling windows..."
 
@@ -57,7 +59,7 @@ python3 "${SCRIPTS}/miranda/permutation_test/shuffle_fasta.py" \
 seqkit seq -r -p "${ITER_DIR}/shuffled_windows.fa" \
   > "${ITER_DIR}/shuffled_windows_minus.fa"
 
-# ── 2. Run miRanda ─────────────────────────────────────────────────────────
+# ── 2. Run miRanda (parallel across tRFs) ────────────────────────────────
 
 if [ "$RUN_MODE" == "tRF" ]; then
   SC=90.0
@@ -70,19 +72,33 @@ else
   exit 1
 fi
 
-echo "[$(date)] Iteration ${ITER}: scanning plus strand..."
-miranda "$SRNA_FA" "${ITER_DIR}/shuffled_windows.fa" \
-  ${MIRANDA_FLAGS} \
-  -out "${ITER_DIR}/result_plus" \
-  -quiet
+# sRNA query files were split during setup
+SRNA_DIR="${OUTDIR}/sRNA_queries"
 
-echo "[$(date)] Iteration ${ITER}: scanning minus strand..."
-miranda "$SRNA_FA" "${ITER_DIR}/shuffled_windows_minus.fa" \
-  ${MIRANDA_FLAGS} \
-  -out "${ITER_DIR}/result_minus" \
-  -quiet
+RESULT_DIR="${ITER_DIR}/results"
+mkdir -p "$RESULT_DIR"
 
-# ── 3. Count hits ──────────────────────────────────────────────────────────
+run_one_trf() {
+  local SRNA_FILE="$1"
+  local SRNA_NAME=$(basename "${SRNA_FILE}" .fa)
+
+  miranda "$SRNA_FILE" "${ITER_DIR}/shuffled_windows.fa" \
+    ${MIRANDA_FLAGS} \
+    -out "${RESULT_DIR}/result_${SRNA_NAME}_plus" \
+    -quiet
+
+  miranda "$SRNA_FILE" "${ITER_DIR}/shuffled_windows_minus.fa" \
+    ${MIRANDA_FLAGS} \
+    -out "${RESULT_DIR}/result_${SRNA_NAME}_minus" \
+    -quiet
+}
+export -f run_one_trf
+export ITER_DIR MIRANDA_FLAGS RESULT_DIR
+
+echo "[$(date)] Iteration ${ITER}: scanning with ${N_CORES} cores..."
+parallel -j "$N_CORES" run_one_trf ::: "${SRNA_DIR}"/*.fa
+
+# ── 3. Count hits ────────────────────────────────────────────────────────
 
 count_hits() {
   awk '
@@ -92,17 +108,19 @@ count_hits() {
   ' "$1"
 }
 
-HITS_PLUS=$(count_hits "${ITER_DIR}/result_plus")
-HITS_MINUS=$(count_hits "${ITER_DIR}/result_minus")
-HITS_TOTAL=$(( HITS_PLUS + HITS_MINUS ))
+HITS_TOTAL=0
+for result_file in "${RESULT_DIR}"/result_*; do
+  HITS=$(count_hits "$result_file")
+  HITS_TOTAL=$(( HITS_TOTAL + HITS ))
+done
 
 echo "${ITER}	${HITS_TOTAL}" > "${OUTDIR}/iterations/hits_${ITER}.txt"
 
-echo "[$(date)] Iteration ${ITER}: ${HITS_PLUS} (+) + ${HITS_MINUS} (-) = ${HITS_TOTAL} total hits"
+echo "[$(date)] Iteration ${ITER}: ${HITS_TOTAL} total hits"
 
-# ── 4. Clean up large intermediate files ───────────────────────────────────
+# ── 4. Clean up large intermediate files ─────────────────────────────────
 
-rm -f "${ITER_DIR}/result_plus" "${ITER_DIR}/result_minus"
+rm -rf "${RESULT_DIR}"
 rm -f "${ITER_DIR}/shuffled_windows.fa" "${ITER_DIR}/shuffled_windows_minus.fa"
 rmdir "${ITER_DIR}" 2>/dev/null
 
