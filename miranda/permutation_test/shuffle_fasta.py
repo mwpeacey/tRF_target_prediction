@@ -20,11 +20,35 @@ Requirements:
 """
 
 import argparse
+import ctypes
+import ctypes.util
 import random
 import re
 import sys
 
 import ushuffle
+
+
+def seed_ushuffle(seed):
+    """
+    Seed ushuffle's internal RNG. ushuffle uses C's rand(), so we need to
+    call srand() at the C level. Try ushuffle.set_seed() first (available in
+    some builds), fall back to calling libc's srand() directly.
+    """
+    if hasattr(ushuffle, "set_seed"):
+        ushuffle.set_seed(seed)
+        return
+
+    libc_name = ctypes.util.find_library("c")
+    if libc_name:
+        libc = ctypes.CDLL(libc_name)
+        libc.srand(ctypes.c_uint(seed))
+    else:
+        print(
+            "WARNING: Could not seed ushuffle RNG — shuffles may not vary "
+            "between iterations.",
+            file=sys.stderr,
+        )
 
 
 def parse_fasta(filepath):
@@ -104,6 +128,7 @@ def main():
 
     if args.seed is not None:
         random.seed(args.seed)
+        seed_ushuffle(args.seed)
 
     n_skipped = 0
     n_shuffled = 0
