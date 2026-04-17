@@ -52,13 +52,8 @@ mkdir -p "${OUTDIR}"
 
 echo "[$(date)] Selecting windows (fraction=${FRACTION}, seed=${SEED})..."
 
-# Ensure genome is indexed
-if [ ! -f "${GENOME_FA}.fai" ]; then
-  samtools faidx "$GENOME_FA"
-fi
-
 python3 "${SCRIPTS}/miranda/permutation_test/select_windows.py" \
-  "${GENOME_FA}.fai" \
+  "${GENOME_FA}" \
   "${OUTDIR}/selected_windows.bed" \
   --fraction "$FRACTION" \
   --window 10000 \
