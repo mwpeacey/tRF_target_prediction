@@ -7,7 +7,8 @@
 ## Description
 ## A single iteration of the permutation test. Shuffles the selected window
 ## sequences (dinucleotide-preserving), runs miRanda on both strands in
-## parallel (one process per tRF), and writes the total hit count.
+## parallel (one process per tRF), and writes hit counts at multiple score
+## thresholds.
 ##
 ## Designed to be submitted as a SLURM array job by run_permutation.sh.
 ## The iteration number comes from SLURM_ARRAY_TASK_ID.
@@ -21,7 +22,6 @@
 ## $2 : Small RNA FASTA
 ## $3 : Output directory (same as permutation_setup.sh)
 ## $4 : Run mode ("tRF" or "miRNA")
-## $5 : miRanda alignment score cutoff (default: 90)
 
 echo "Permutation iteration started on $(date)"
 
@@ -34,7 +34,6 @@ SCRIPTS="$1"
 SRNA_FA="$2"
 OUTDIR="$3"
 RUN_MODE="$4"
-SCORE_CUTOFF="${5:-90}"
 
 N_CORES=${SLURM_CPUS_PER_TASK:-16}
 
@@ -63,10 +62,11 @@ seqkit seq -r -p "${ITER_DIR}/shuffled_windows.fa" \
 
 # ── 2. Run miRanda (parallel across tRFs) ────────────────────────────────
 
+# Run at minimum threshold to capture all hits
 if [ "$RUN_MODE" == "tRF" ]; then
-  MIRANDA_FLAGS="-sc ${SCORE_CUTOFF} -en 0 -scale 1.0 -loose"
+  MIRANDA_FLAGS="-sc 70.0 -en 0 -scale 1.0 -loose"
 elif [ "$RUN_MODE" == "miRNA" ]; then
-  MIRANDA_FLAGS="-sc ${SCORE_CUTOFF} -en 0"
+  MIRANDA_FLAGS="-sc 150.0 -en 0"
 else
   echo "ERROR: RUN_MODE must be 'tRF' or 'miRNA'" >&2
   exit 1
@@ -98,30 +98,39 @@ export ITER_DIR MIRANDA_FLAGS RESULT_DIR
 echo "[$(date)] Iteration ${ITER}: scanning with ${N_CORES} cores..."
 parallel -j "$N_CORES" run_one_trf ::: "${SRNA_DIR}"/*.fa
 
-# ── 3. Count hits ────────────────────────────────────────────────────────
+# ── 3. Count hits at multiple score thresholds ───────────────────────────
 
-count_hits() {
+# Extract all scores
+for result_file in "${RESULT_DIR}"/result_*; do
   awk '
     /Scores for this hit:/ { scores_next = 1; next }
-    scores_next { if (/^>/) count++; scores_next = 0 }
-    END { print count+0 }
-  ' "$1"
-}
+    scores_next {
+      if (/^>/) {
+        split($0, fields, "\t")
+        print fields[3]
+      }
+      scores_next = 0
+    }
+  ' "$result_file"
+done > "${ITER_DIR}/scores.txt"
 
-HITS_TOTAL=0
-for result_file in "${RESULT_DIR}"/result_*; do
-  HITS=$(count_hits "$result_file")
-  HITS_TOTAL=$(( HITS_TOTAL + HITS ))
+# Count at each threshold and write as a single tab-separated line:
+# iteration \t hits_70 \t hits_75 \t hits_80 \t ...
+LINE="${ITER}"
+for CUTOFF in $(seq 70 5 165); do
+  HITS=$(awk -v cutoff="$CUTOFF" '$1 >= cutoff { count++ } END { print count+0 }' "${ITER_DIR}/scores.txt")
+  LINE="${LINE}\t${HITS}"
 done
+echo -e "$LINE" > "${OUTDIR}/iterations/hits_${ITER}.txt"
 
-echo "${ITER}	${HITS_TOTAL}" > "${OUTDIR}/iterations/hits_${ITER}.txt"
-
-echo "[$(date)] Iteration ${ITER}: ${HITS_TOTAL} total hits"
+echo "[$(date)] Iteration ${ITER} complete. Hit counts by threshold:"
+cat "${OUTDIR}/iterations/hits_${ITER}.txt"
 
 # ── 4. Clean up large intermediate files ─────────────────────────────────
 
 rm -rf "${RESULT_DIR}"
 rm -f "${ITER_DIR}/shuffled_windows.fa" "${ITER_DIR}/shuffled_windows_minus.fa"
+rm -f "${ITER_DIR}/scores.txt"
 rmdir "${ITER_DIR}" 2>/dev/null
 
 echo "[$(date)] Iteration ${ITER} complete."

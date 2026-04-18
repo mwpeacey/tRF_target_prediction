@@ -10,8 +10,9 @@
 ## One-time setup for the permutation test. Selects a random subset of
 ## non-overlapping 10 kbp windows from the genome, extracts their sequences
 ## (plus and minus strand), splits the sRNA FASTA into individual queries,
-## and runs miRanda on the real (unshuffled) sequences in parallel (one
-## process per tRF) to obtain the observed hit count.
+## and runs miRanda at the minimum score threshold on the real (unshuffled)
+## sequences in parallel. Hit counts are recorded at multiple score
+## thresholds (70, 75, 80, ... ) from a single miRanda run.
 ##
 ## This script is called by run_permutation.sh and should not normally be
 ## submitted directly.
@@ -27,13 +28,12 @@
 ## $4 : Output directory for permutation test
 ## $5 : Run mode ("tRF" or "miRNA")
 ## $6 : Genome fraction to sample (e.g. 0.05 for 5%, default: 0.05)
-## $7 : miRanda alignment score cutoff (default: 90)
-## $8 : Random seed (default: 42)
+## $7 : Random seed (default: 42)
 
 echo "Permutation setup started on $(date)"
 
 if [ "$#" -lt 5 ]; then
-  echo "Usage: $0 <scripts_dir> <genome.fa> <sRNA.fa> <out_dir> <run_mode> [fraction] [score_cutoff] [seed]" >&2
+  echo "Usage: $0 <scripts_dir> <genome.fa> <sRNA.fa> <out_dir> <run_mode> [fraction] [seed]" >&2
   exit 1
 fi
 
@@ -43,8 +43,7 @@ SRNA_FA="$3"
 OUTDIR="$4"
 RUN_MODE="$5"
 FRACTION="${6:-0.05}"
-SCORE_CUTOFF="${7:-90}"
-SEED="${8:-42}"
+SEED="${7:-42}"
 
 N_CORES=${SLURM_CPUS_PER_TASK:-16}
 
@@ -98,12 +97,15 @@ echo "[$(date)] Split into ${N_SRNAS} individual sRNA files."
 
 # ── 4. Run miRanda on real sequences (parallel across tRFs) ──────────────
 
+# Run at minimum threshold (70 for tRF, 150 for miRNA) to capture all hits.
+# Counts at higher thresholds are extracted from the same output.
+
 echo "[$(date)] Running miRanda on real (unshuffled) windows (${N_CORES} cores)..."
 
 if [ "$RUN_MODE" == "tRF" ]; then
-  MIRANDA_FLAGS="-sc ${SCORE_CUTOFF} -en 0 -scale 1.0 -loose"
+  MIRANDA_FLAGS="-sc 70.0 -en 0 -scale 1.0 -loose"
 elif [ "$RUN_MODE" == "miRNA" ]; then
-  MIRANDA_FLAGS="-sc ${SCORE_CUTOFF} -en 0"
+  MIRANDA_FLAGS="-sc 150.0 -en 0"
 else
   echo "ERROR: RUN_MODE must be 'tRF' or 'miRNA', got '${RUN_MODE}'" >&2
   exit 1
@@ -134,25 +136,33 @@ parallel -j "$N_CORES" run_one_trf ::: "${SRNA_DIR}"/*.fa
 
 echo "[$(date)] All miRanda jobs complete."
 
-# ── 5. Count hits ─────────────────────────────────────────────────────────
+# ── 5. Count hits at multiple score thresholds ───────────────────────────
 
-echo "[$(date)] Counting observed hits..."
+echo "[$(date)] Counting observed hits at multiple thresholds..."
 
-count_hits() {
+# Extract all alignment scores from miRanda output into a single file.
+# Score is field 6 on hit lines (lines starting with ">" after "Scores for").
+for result_file in "${REAL_DIR}"/result_*; do
   awk '
     /Scores for this hit:/ { scores_next = 1; next }
-    scores_next { if (/^>/) count++; scores_next = 0 }
-    END { print count+0 }
-  ' "$1"
-}
+    scores_next {
+      if (/^>/) {
+        # Split on tab; score is the 6th field in miRanda >line output
+        split($0, fields, "\t")
+        print fields[3]
+      }
+      scores_next = 0
+    }
+  ' "$result_file"
+done > "${OUTDIR}/real_scores.txt"
 
-HITS_TOTAL=0
-for result_file in "${REAL_DIR}"/result_*; do
-  HITS=$(count_hits "$result_file")
-  HITS_TOTAL=$(( HITS_TOTAL + HITS ))
+# Count hits at each threshold
+echo -e "cutoff\thits" > "${OUTDIR}/observed_hits.tsv"
+for CUTOFF in $(seq 70 5 165); do
+  HITS=$(awk -v cutoff="$CUTOFF" '$1 >= cutoff { count++ } END { print count+0 }' "${OUTDIR}/real_scores.txt")
+  echo -e "${CUTOFF}\t${HITS}" >> "${OUTDIR}/observed_hits.tsv"
 done
 
-echo "${HITS_TOTAL}" > "${OUTDIR}/observed_hits.txt"
-
-echo "[$(date)] Observed hits: ${HITS_TOTAL} total"
+echo "[$(date)] Observed hits by threshold:"
+cat "${OUTDIR}/observed_hits.tsv"
 echo "[$(date)] Permutation setup complete."
