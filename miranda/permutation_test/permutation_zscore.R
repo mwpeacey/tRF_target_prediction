@@ -18,8 +18,8 @@
 
 library(tidyverse)
 
-args <- commandArgs(TRUE)
-outdir <- args[1]
+#args <- commandArgs(TRUE)
+outdir <- 'import/miranda/miranda_permutation/'
 
 # ── Load data ────────────────────────────────────────────────────────────────
 

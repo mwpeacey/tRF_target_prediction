@@ -337,6 +337,91 @@ sql_escape <- function(x) {
   gsub("'", "''", x, fixed = TRUE)
 }
 
+parse_coord_range <- function(coord_text) {
+  if (is.null(coord_text)) {
+    return(NULL)
+  }
+
+  text <- trimws(coord_text)
+  if (!nzchar(text)) {
+    return(NULL)
+  }
+
+  # Normalize: tabs -> spaces, ".." -> "-", strip commas, collapse whitespace.
+  text <- gsub("\\t", " ", text)
+  text <- gsub("\\.\\.", "-", text)
+  text <- gsub(",", "", text)
+  text <- gsub("\\s+", " ", text)
+
+  # Accept several common formats:
+  #   chr1:1000-2000
+  #   chr1:1000 2000
+  #   chr1 1000-2000
+  #   chr1 1000 2000   (BED-like)
+  patterns <- c(
+    "^(\\S+):\\s*([0-9]+)\\s*-\\s*([0-9]+)$",
+    "^(\\S+):\\s*([0-9]+)\\s+([0-9]+)$",
+    "^(\\S+)\\s+([0-9]+)\\s*-\\s*([0-9]+)$",
+    "^(\\S+)\\s+([0-9]+)\\s+([0-9]+)$"
+  )
+
+  m <- NULL
+  for (pat in patterns) {
+    candidate <- regmatches(text, regexec(pat, text))[[1]]
+    if (length(candidate) == 4L) {
+      m <- candidate
+      break
+    }
+  }
+
+  if (is.null(m)) {
+    return(list(error = "Try chr1:1,000,000-2,000,000 (also accepts 'chr1 1000 2000')."))
+  }
+
+  chrom <- m[2]
+  start_val <- suppressWarnings(as.numeric(m[3]))
+  end_val <- suppressWarnings(as.numeric(m[4]))
+
+  if (is.na(start_val) || is.na(end_val)) {
+    return(list(error = "Could not parse start/end positions."))
+  }
+
+  if (start_val > end_val) {
+    tmp <- start_val
+    start_val <- end_val
+    end_val <- tmp
+  }
+
+  # Accept either "chr1" or "1" — match both forms against the data.
+  alt_chrom <- if (grepl("^chr", chrom, ignore.case = TRUE)) {
+    sub("^chr", "", chrom, ignore.case = TRUE)
+  } else {
+    paste0("chr", chrom)
+  }
+  seqnames <- unique(c(chrom, alt_chrom))
+
+  list(seqname = chrom, seqnames = seqnames, start = start_val, end = end_val)
+}
+
+format_coord_status <- function(parsed) {
+  if (is.null(parsed)) {
+    return("")
+  }
+
+  if (!is.null(parsed$error)) {
+    return(parsed$error)
+  }
+
+  width <- parsed$end - parsed$start + 1
+  sprintf(
+    "Showing sites overlapping %s:%s-%s (%s bp window).",
+    parsed$seqname,
+    format(parsed$start, big.mark = ",", trim = TRUE, scientific = FALSE),
+    format(parsed$end, big.mark = ",", trim = TRUE, scientific = FALSE),
+    format(width, big.mark = ",", trim = TRUE, scientific = FALSE)
+  )
+}
+
 target_table_sql <- function(csv_path) {
   paste0(
     "CREATE OR REPLACE TABLE targets AS ",
@@ -413,9 +498,31 @@ build_where_clause <- function(
   gencode_locations,
   stringtie_locations,
   score_min,
-  score_max
+  score_max,
+  coord_range = NULL
 ) {
   clauses <- c()
+
+  if (!is.null(coord_range) && is.null(coord_range$error)) {
+    seqname_candidates <- coord_range$seqnames
+    if (is.null(seqname_candidates) || length(seqname_candidates) == 0L) {
+      seqname_candidates <- coord_range$seqname
+    }
+    quoted_seqnames <- vapply(
+      seqname_candidates,
+      function(x) as.character(DBI::dbQuoteString(con, x)),
+      character(1)
+    )
+    clauses <- c(
+      clauses,
+      sprintf(
+        "seqnames IN (%s) AND start <= %s AND \"end\" >= %s",
+        paste(quoted_seqnames, collapse = ", "),
+        format(as.numeric(coord_range$end), scientific = FALSE),
+        format(as.numeric(coord_range$start), scientific = FALSE)
+      )
+    )
+  }
 
   if (!is.null(search) && nzchar(trimws(search))) {
     pattern <- paste0("%", trimws(search), "%")
@@ -894,6 +1001,17 @@ ui <- shiny::fluidPage(
         font-size: 12px;
         margin-bottom: 6px;
       }
+      .coord-status {
+        color: var(--muted);
+        font-size: 11.5px;
+        margin-top: -6px;
+        margin-bottom: 6px;
+        min-height: 14px;
+        font-style: italic;
+      }
+      .coord-status:empty {
+        display: none;
+      }
 
       /* ── Table ── */
       table.dataTable {
@@ -1034,7 +1152,9 @@ ui <- shiny::fluidPage(
       shiny::div(
         class = "control-panel",
         shiny::div(class = "panel-title", "Filter Target Sites"),
-        shiny::textInput("search", "Search Sites", placeholder = "tRF, gene, coordinates, LTR..."),
+        shiny::textInput("search", "Search Sites", placeholder = "tRF, gene, LTR..."),
+        shiny::textInput("coord_range", "Genomic Range", placeholder = "chr1:1,000,000-2,000,000"),
+        shiny::div(class = "coord-status", shiny::textOutput("coord_status")),
         shiny::sliderInput("score_range", "Alignment Score", min = score_min, max = score_max, value = c(score_min, score_max), step = 5, ticks = TRUE),
         shiny::selectInput("ltr_filter", "LTR Association", choices = c("All sites" = "all", "LTR-associated only" = "ltr", "Non-LTR only" = "no-ltr")),
         shiny::selectInput("gag_filter", "Gag-Derived", choices = c("All sites" = "all", "Gag-derived only" = "gag", "Non-Gag only" = "no-gag")),
@@ -1072,8 +1192,19 @@ server <- function(input, output, session) {
   current_page <- shiny::reactiveVal(1L)
   current_page_data <- shiny::reactiveVal(data.frame())
 
+  parsed_coord_range <- shiny::debounce(
+    shiny::reactive({
+      parse_coord_range(input$coord_range)
+    }),
+    400
+  )
+
+  output$coord_status <- shiny::renderText({
+    format_coord_status(parsed_coord_range())
+  })
+
   shiny::observeEvent(
-    list(input$search, input$ltr_filter, input$gag_filter, input$imprinted_filter, input$gencode_locations, input$stringtie_locations, input$score_range, input$results_table_sort),
+    list(input$search, input$ltr_filter, input$gag_filter, input$imprinted_filter, input$gencode_locations, input$stringtie_locations, input$score_range, parsed_coord_range(), input$results_table_sort),
     {
       current_page(1L)
     },
@@ -1090,7 +1221,8 @@ server <- function(input, output, session) {
       gencode_locations = input$gencode_locations,
       stringtie_locations = input$stringtie_locations,
       score_min = input$score_range[1],
-      score_max = input$score_range[2]
+      score_max = input$score_range[2],
+      coord_range = parsed_coord_range()
     )
 
     sql <- paste(
@@ -1133,7 +1265,8 @@ server <- function(input, output, session) {
       gencode_locations = input$gencode_locations,
       stringtie_locations = input$stringtie_locations,
       score_min = input$score_range[1],
-      score_max = input$score_range[2]
+      score_max = input$score_range[2],
+      coord_range = parsed_coord_range()
     )
 
     sql <- paste(
@@ -1372,6 +1505,17 @@ server <- function(input, output, session) {
         }
       }
 
+      coord_parsed <- parsed_coord_range()
+      if (!is.null(coord_parsed) && is.null(coord_parsed$error)) {
+        coord_slug <- tolower(gsub(
+          "[^A-Za-z0-9]+",
+          "-",
+          sprintf("%s-%s-%s", coord_parsed$seqname, coord_parsed$start, coord_parsed$end)
+        ))
+        coord_slug <- sub("^-+|-+$", "", coord_slug)
+        parts <- c(parts, paste0("range-", coord_slug))
+      }
+
       if (length(parts) == 1L) {
         parts <- c(parts, "all")
       }
@@ -1388,7 +1532,8 @@ server <- function(input, output, session) {
         gencode_locations = input$gencode_locations,
         stringtie_locations = input$stringtie_locations,
         score_min = input$score_range[1],
-        score_max = input$score_range[2]
+        score_max = input$score_range[2],
+        coord_range = parsed_coord_range()
       )
 
       sql <- paste(
