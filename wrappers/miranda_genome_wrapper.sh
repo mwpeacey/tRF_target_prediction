@@ -35,30 +35,15 @@ cd ${RUN_ID}
 
 if  [[ ! -f sRNA_list.txt ]]; then
 
-	cat ${SMALL_RNA_FASTA} | grep '>' > temp_sRNA_list.txt
-
-	i=1
-	for line in $(cat temp_sRNA_list.txt); do
-
-        	result=${line#*>}
-
-        	if [ $i = 1 ]; then
-
-                	echo $result > sRNA_list.txt
-
-        	else
-
-            		echo $result >> sRNA_list.txt
-
-        	fi
-
-		((i=i+1))
-
-	done
+	# tDRnamer headers look like:
+	#   >tDR-55:76-Ala-AGC-1|tRF_1 Sprinzl_position: 55..76
+	# Use the clean tRF_N id (after the pipe, before any space) as the internal
+	# identifier: it is unique and safe for filenames / SLURM job names.
+	grep '^>' "${SMALL_RNA_FASTA}" \
+		| sed -E 's/^>.*\|(tRF_[0-9]+).*/\1/' \
+		> sRNA_list.txt
 
 fi
-
-rm temp_sRNA_list.txt
 
 for sRNA in $(cat sRNA_list.txt); do
 
@@ -69,7 +54,16 @@ for sRNA in $(cat sRNA_list.txt); do
 	mkdir -p ${sRNA}
 	cd ${sRNA}
 
-	cat ${SMALL_RNA_FASTA} | sed -n "/${sRNA}/,/>/p" | head -2 > temp_${sRNA}.fasta
+	# Pull this fragment's record and rebuild a clean, whitespace-free 2-line
+	# fasta. The header is trimmed to its first token ("tDRname|tRF_N"), which
+	# drops the "Sprinzl_position: ..." description so miRanda's Seq1 is exactly
+	# "<tDRname>|<tRF_N>" and carries both ids through to the output. The pipe
+	# match is anchored (|tRF_1 not |tRF_10) to avoid partial-id collisions.
+	awk -v id="${sRNA}" '
+		/^>/ { keep = ($0 ~ ("\\|" id "([[:space:]]|$)"))
+		       if (keep) { split($0, a, /[[:space:]]/); print a[1]; next } }
+		keep { print }
+	' "${SMALL_RNA_FASTA}" | head -2 > temp_${sRNA}.fasta
 	
 	sbatch --job-name=${RUN_ID}_${sRNA}_miranda \
     	--output=${OUTPUT_DIRECTORY}/${RUN_ID}/${sRNA}/${RUN_ID}_${sRNA}_miranda_output.txt \

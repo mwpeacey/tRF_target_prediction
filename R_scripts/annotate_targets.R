@@ -30,7 +30,10 @@ data = read.csv(file = 'import/miranda/new/miranda_output_70.csv', header = TRUE
 # Add tRF information
 
 tRF_infomation = read.csv('import/mm10_tRF3b.csv') %>%
-  dplyr::rename(tRF = 'unique_name')
+  dplyr::rename(tRF = 'unique_name') %>%
+  # tDRnamer name is taken from the miRanda query id below, so drop any
+  # tDRnamer column here to avoid a duplicate/clashing column at the merge.
+  dplyr::select(-dplyr::any_of('tDRnamer'))
 
 tRF_infomation = tRF_infomation %>%
   dplyr::mutate(
@@ -43,7 +46,15 @@ tRF_infomation = tRF_infomation %>%
       map_chr(~ paste(.x, collapse = "_"))
   )
 
-data$tRF = stringr::str_remove(data$tRF, '>')
+# miRanda query names now arrive as ">tDR-55:76-Ala-AGC-1|tRF_1", carrying both
+# the tDRnamer name and the original unique id joined by "|". Strip the ">",
+# split on "|" into a tDRnamer column and the unique tRF id used as the key.
+data = data %>%
+  dplyr::mutate(
+    tRF      = stringr::str_remove(tRF, '^>'),
+    tDRnamer = stringr::str_remove(tRF, '\\|.*$'),   # e.g. tDR-55:76-Ala-AGC-1
+    tRF      = stringr::str_remove(tRF, '^.*\\|')     # e.g. tRF_1
+  )
 
 data = merge(data, tRF_infomation, by = 'tRF') %>%
   separate(col = source_tRNAs, sep = '-', into = c('A', 'B', 'C', 'D'), remove = F) %>%
