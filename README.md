@@ -1,8 +1,9 @@
 # tRF target prediction
 [![bioRxiv](https://img.shields.io/badge/bioRxiv-10.64898%2F2026.01.22.698655-B31B1B.svg)](https://doi.org/10.64898/2026.01.22.698655)
-[![DOI](https://zenodo.org/badge/927843426.svg)](https://doi.org/10.5281/zenodo.18601741)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18601741-blue.svg)](https://doi.org/10.5281/zenodo.18601741)
+[![Shiny app](https://img.shields.io/badge/Shiny_app-live-brightgreen)](https://mwpeacey.shinyapps.io/trf-target-explorer/)
 
-A pipeline for the prediction of 22nt 3' tRNA fragment (3'-tRF) targets in the mouse genome, with a focus on target sites derived from the primer binding site of LTR-retrotransposons. Associated with the bioRxiv preprint 10.64898/2026.01.22.698655v1
+A pipeline for the prediction of 22nt 3' tRNA fragment (3'-tRF) targets in the mouse genome, with a focus on target sites derived from the primer binding site of LTR-retrotransposons. Associated with the bioRxiv preprint 10.64898/2026.01.22.698655v1. An interactive Shiny app for browsing and filtering annotated target sites is available at https://mwpeacey.shinyapps.io/trf-target-explorer/.
 
 To recover target sites in novel LTR-retrotransposon derived transcripts, a transcriptome is assembled from RNA-seq data from the early embryo. Scripts for transcriptome assembly are adapted from Modzelewski et al 2021 (https://epigenome.wustl.edu/TE_Transcript_Assembly/tool.html).
 
@@ -35,3 +36,9 @@ Except for one-off tasks such as index generation and tRF sequence extraction, i
 
 1. R_scripts/annotate_targets.R: annnotate features of predicted target sites, including their location relative to LTRs and GENCODE/StringTie transcripts.
 2. R_scripts/permutation_analysis.sh: calculates the Z-score for overlap between predicted target sites and LTRs at different alignment score thresholds.
+
+## Interactive target site browser
+
+1. R_scripts/shiny_target_browser.R: Shiny app for querying annotated target sites, backed by DuckDB.
+2. R_scripts/run_shiny_target_browser.R: launch the app locally (default: http://127.0.0.1:3838).
+3. R_scripts/deploy_shiny_target_browser_shinyapps.R: deploy the app to shinyapps.io.
