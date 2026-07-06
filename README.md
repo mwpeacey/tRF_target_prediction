@@ -1,6 +1,6 @@
 # tRF target prediction
 [![bioRxiv](https://img.shields.io/badge/bioRxiv-10.64898%2F2026.01.22.698655-B31B1B.svg)](https://doi.org/10.64898/2026.01.22.698655)
-[![DOI](https://zenodo.org/badge/927843426.svg)](https://doi.org/10.5281/zenodo.18601740)
+[![DOI](https://zenodo.org/badge/927843426.svg)](https://doi.org/10.5281/zenodo.18601741)
 
 A pipeline for the prediction of 22nt 3' tRNA fragment (3'-tRF) targets in the mouse genome, with a focus on target sites derived from the primer binding site of LTR-retrotransposons. Associated with the bioRxiv preprint 10.64898/2026.01.22.698655v1
 
