@@ -3,7 +3,7 @@
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18601741-blue.svg)](https://doi.org/10.5281/zenodo.18601741)
 [![Shiny app](https://img.shields.io/badge/Shiny_app-live-brightgreen)](https://mwpeacey.shinyapps.io/trf-target-explorer/)
 
-A pipeline for the prediction of 22nt 3' tRNA fragment (3'-tRF) targets in the mouse genome, with a focus on target sites derived from the primer binding site of LTR-retrotransposons. Associated with the bioRxiv preprint 10.64898/2026.01.22.698655v1. An interactive Shiny app for browsing and filtering annotated target sites is available at https://mwpeacey.shinyapps.io/trf-target-explorer/.
+A pipeline for the prediction of 22nt 3' tRNA fragment (3'-tRF) targets in the mouse genome, with a focus on target sites derived from the primer binding site of LTR-retrotransposons. Associated with the bioRxiv preprint [10.64898/2026.01.22.698655v1](https://doi.org/10.64898/2026.01.22.698655). An interactive Shiny app for browsing and filtering annotated target sites is available at https://mwpeacey.shinyapps.io/trf-target-explorer/.
 
 To recover target sites in novel LTR-retrotransposon derived transcripts, a transcriptome is assembled from RNA-seq data from the early embryo. Scripts for transcriptome assembly are adapted from Modzelewski et al 2021 (https://epigenome.wustl.edu/TE_Transcript_Assembly/tool.html).
 
