@@ -7,8 +7,7 @@
 ## Description
 ## A single iteration of the permutation test. Shuffles the selected window
 ## sequences (dinucleotide-preserving), runs miRanda on both strands in
-## parallel (one process per tRF), and writes hit counts at multiple score
-## thresholds.
+## parallel (one process per tRF), and counts hits.
 ##
 ## Designed to be submitted as a SLURM array job by run_permutation.sh.
 ## The iteration number comes from SLURM_ARRAY_TASK_ID.
@@ -22,11 +21,12 @@
 ## $2 : Small RNA FASTA
 ## $3 : Output directory (same as permutation_setup.sh)
 ## $4 : Run mode ("tRF" or "miRNA")
+## $5 : Score threshold (e.g. 80)
 
 echo "Permutation iteration started on $(date)"
 
-if [ "$#" -lt 4 ]; then
-  echo "Usage: $0 <scripts_dir> <sRNA.fa> <out_dir> <run_mode>" >&2
+if [ "$#" -lt 5 ]; then
+  echo "Usage: $0 <scripts_dir> <sRNA.fa> <out_dir> <run_mode> <score_threshold>" >&2
   exit 1
 fi
 
@@ -34,6 +34,7 @@ SCRIPTS="$1"
 SRNA_FA="$2"
 OUTDIR="$3"
 RUN_MODE="$4"
+SCORE_THRESHOLD="$5"
 
 N_CORES=${SLURM_CPUS_PER_TASK:-16}
 
@@ -56,25 +57,21 @@ python3 "${SCRIPTS}/miranda/permutation_test/shuffle_fasta.py" \
   --seed "$ITER" \
   --klet 2
 
-# Generate minus strand from shuffled plus strand
 seqkit seq -r -p "${ITER_DIR}/shuffled_windows.fa" \
   > "${ITER_DIR}/shuffled_windows_minus.fa"
 
 # ── 2. Run miRanda (parallel across tRFs) ────────────────────────────────
 
-# Run at minimum threshold to capture all hits
 if [ "$RUN_MODE" == "tRF" ]; then
-  MIRANDA_FLAGS="-sc 70.0 -en 0 -scale 1.0 -loose"
+  MIRANDA_FLAGS="-sc ${SCORE_THRESHOLD}.0 -en 0 -scale 1.0 -loose"
 elif [ "$RUN_MODE" == "miRNA" ]; then
-  MIRANDA_FLAGS="-sc 150.0 -en 0"
+  MIRANDA_FLAGS="-sc ${SCORE_THRESHOLD}.0 -en 0"
 else
   echo "ERROR: RUN_MODE must be 'tRF' or 'miRNA'" >&2
   exit 1
 fi
 
-# sRNA query files were split during setup
 SRNA_DIR="${OUTDIR}/sRNA_queries"
-
 RESULT_DIR="${ITER_DIR}/results"
 mkdir -p "$RESULT_DIR"
 
@@ -98,39 +95,17 @@ export ITER_DIR MIRANDA_FLAGS RESULT_DIR
 echo "[$(date)] Iteration ${ITER}: scanning with ${N_CORES} cores..."
 parallel -j "$N_CORES" run_one_trf ::: "${SRNA_DIR}"/*.fa
 
-# ── 3. Count hits at multiple score thresholds ───────────────────────────
+# ── 3. Count hits ─────────────────────────────────────────────────────────
 
-# Extract all scores
-for result_file in "${RESULT_DIR}"/result_*; do
-  awk '
-    /Scores for this hit:/ { scores_next = 1; next }
-    scores_next {
-      if (/^>/) {
-        split($0, fields, "\t")
-        print fields[3]
-      }
-      scores_next = 0
-    }
-  ' "$result_file"
-done > "${ITER_DIR}/scores.txt"
+HITS=$(grep -c "Scores for this hit:" "${RESULT_DIR}"/result_* | awk -F: '{s+=$2} END {print s+0}')
+echo -e "${ITER}\t${HITS}" > "${OUTDIR}/iterations/hits_${ITER}.txt"
 
-# Count at each threshold and write as a single tab-separated line:
-# iteration \t hits_70 \t hits_75 \t hits_80 \t ...
-LINE="${ITER}"
-for CUTOFF in $(seq 70 5 165); do
-  HITS=$(awk -v cutoff="$CUTOFF" '$1 >= cutoff { count++ } END { print count+0 }' "${ITER_DIR}/scores.txt")
-  LINE="${LINE}\t${HITS}"
-done
-echo -e "$LINE" > "${OUTDIR}/iterations/hits_${ITER}.txt"
+echo "[$(date)] Iteration ${ITER} complete. Hits: ${HITS}"
 
-echo "[$(date)] Iteration ${ITER} complete. Hit counts by threshold:"
-cat "${OUTDIR}/iterations/hits_${ITER}.txt"
-
-# ── 4. Clean up large intermediate files ─────────────────────────────────
+# ── 4. Clean up ──────────────────────────────────────────────────────────
 
 rm -rf "${RESULT_DIR}"
 rm -f "${ITER_DIR}/shuffled_windows.fa" "${ITER_DIR}/shuffled_windows_minus.fa"
-rm -f "${ITER_DIR}/scores.txt"
 rmdir "${ITER_DIR}" 2>/dev/null
 
-echo "[$(date)] Iteration ${ITER} complete."
+echo "[$(date)] Iteration ${ITER} done."

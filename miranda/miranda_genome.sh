@@ -26,6 +26,10 @@ sRNA=$3
 RUN_MODE=$4
 OUTPUT_DIRECTORY=$5
 
+# Strip any trailing slash so a path like ".../windows.fa/" isn't treated as a
+# directory by miRanda (and doesn't corrupt the MINUS_FA derivation below).
+GENOME_FASTA="${GENOME_FASTA%/}"
+
 MINUS_FA="${GENOME_FASTA%.*}_minus.${GENOME_FASTA##*.}"
 
 echo "Output directory: ${OUTPUT_DIRECTORY}"

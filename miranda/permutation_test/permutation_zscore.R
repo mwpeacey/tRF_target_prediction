@@ -1,132 +1,93 @@
 ################################################################################
 # permutation_zscore.R
 #
-# Computes Z-scores and p-values at each alignment score threshold for the
-# genome-shuffling permutation test.
+# Computes Z-score and p-values from the permutation test output and writes
+# a CSV ready to plot as a histogram.
 #
 # Reads:
-#   <outdir>/observed_hits.tsv   - two columns: cutoff, hits
-#   <outdir>/shuffled_hits.tsv   - columns: iteration, hits_70, hits_75, ...
+#   <outdir>/observed_hits.txt   - single integer (observed hit count)
+#   <outdir>/shuffled_hits.tsv   - two columns: iteration, hits
 #
 # Writes:
-#   <outdir>/permutation_results.csv
-#   <outdir>/permutation_plot.pdf
+#   <outdir>/permutation_histogram_data.csv
+#     Columns: iteration, shuffled_hits, observed_hits, z_score,
+#              empirical_p, analytical_p
+#     One row per iteration. Histogram the shuffled_hits column;
+#     observed_hits is the vertical line.
 #
 # Usage:
-#   Rscript permutation_zscore.R <outdir>
+#   Rscript permutation_zscore.R <score_threshold> <n_iterations>
+#
+# Example:
+#   Rscript permutation_zscore.R 80 1000
 ################################################################################
 
 library(tidyverse)
 
-#args <- commandArgs(TRUE)
-outdir <- 'import/miranda/miranda_permutation/'
+# ── Parameters ──────────────────────────────────────────────────────────────
+
+args <- commandArgs(TRUE)
+if (length(args) < 2) {
+  stop("Usage: Rscript permutation_zscore.R <score_threshold> <n_iterations>")
+}
+
+score_threshold <- as.integer(args[1])
+n_iter          <- as.integer(args[2])
+outdir          <- 'import/miranda/miranda_permutation/'
+
+cat("Score threshold:", score_threshold, "\n")
+cat("Iterations requested:", n_iter, "\n")
 
 # ── Load data ────────────────────────────────────────────────────────────────
 
-observed <- read_tsv(
-  file.path(outdir, "observed_hits.tsv"),
-  col_types = cols(cutoff = col_integer(), hits = col_integer())
-)
+obs_hits <- as.integer(readLines(file.path(outdir, "observed_hits.txt"))[1])
 
 shuffled <- read_tsv(
   file.path(outdir, "shuffled_hits.tsv"),
-  col_types = cols(.default = col_integer())
+  col_types = cols(iteration = col_integer(), hits = col_integer())
 )
 
-cat("Observed thresholds:", nrow(observed), "\n")
-cat("Shuffled iterations:", nrow(shuffled), "\n")
+# Use first n_iter iterations
+shuf <- shuffled %>%
+  arrange(iteration) %>%
+  slice_head(n = n_iter)
 
-# ── Compute Z-score and p-values at each threshold ──────────────────────────
-
-# Reshape shuffled from wide to long
-shuffled_long <- shuffled %>%
-  pivot_longer(
-    cols = starts_with("hits_"),
-    names_to = "cutoff",
-    names_prefix = "hits_",
-    values_to = "hits"
-  ) %>%
-  mutate(cutoff = as.integer(cutoff))
-
-# Summarise null distribution per threshold
-null_summary <- shuffled_long %>%
-  group_by(cutoff) %>%
-  summarise(
-    mean_shuffled = mean(hits),
-    sd_shuffled = sd(hits),
-    n_iterations = n(),
-    .groups = "drop"
-  )
-
-# Join with observed and compute statistics
-results <- observed %>%
-  rename(observed_hits = hits) %>%
-  inner_join(null_summary, by = "cutoff") %>%
-  mutate(
-    z_score = if_else(sd_shuffled > 0,
-      (observed_hits - mean_shuffled) / sd_shuffled,
-      NA_real_
-    ),
-    # Empirical p-value (one-sided, conservative; Phipson & Smyth 2010)
-    n_geq = map2_int(cutoff, observed_hits, function(co, obs) {
-      vals <- shuffled_long %>% filter(cutoff == co) %>% pull(hits)
-      sum(vals >= obs)
-    }),
-    empirical_p = (n_geq + 1) / (n_iterations + 1),
-    analytical_p = pnorm(z_score, lower.tail = FALSE)
-  )
-
-cat("\n── Results ──\n")
-print(as.data.frame(results), row.names = FALSE)
-
-# ── Write results ────────────────────────────────────────────────────────────
-
-write_csv(results, file.path(outdir, "permutation_results.csv"))
-
-# ── Plot ─────────────────────────────────────────────────────────────────────
-
-p_top <- ggplot(results, aes(x = cutoff, y = observed_hits)) +
-  geom_line(colour = "steelblue", linewidth = 1) +
-  scale_y_log10(
-    labels = scales::trans_format("log10", scales::math_format(10^.x))
-  ) +
-  labs(x = NULL, y = expression(log[10] ~ "(retained sites)")) +
-  theme_classic(base_size = 14) +
-  theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    plot.margin = margin(5, 10, 0, 10)
-  )
-
-p_bottom <- ggplot(results, aes(x = cutoff, y = z_score)) +
-  geom_hline(yintercept = 0, colour = "black", linewidth = 0.4) +
-  geom_line(colour = "firebrick", linewidth = 1) +
-  labs(x = "Alignment score", y = "Z-score\n(shuffled genome)") +
-  theme_classic(base_size = 14) +
-  theme(plot.margin = margin(0, 10, 5, 10))
-
-# Stack panels
-if (requireNamespace("cowplot", quietly = TRUE)) {
-  p_combined <- cowplot::plot_grid(
-    p_top, p_bottom, ncol = 1, align = "v", rel_heights = c(1, 1)
-  )
-} else {
-  # Fallback: use patchwork or save separately
-  if (requireNamespace("patchwork", quietly = TRUE)) {
-    p_combined <- p_top / p_bottom
-  } else {
-    message("Neither cowplot nor patchwork available. Saving panels separately.")
-    ggsave(file.path(outdir, "permutation_plot_top.pdf"), p_top, width = 5, height = 3)
-    ggsave(file.path(outdir, "permutation_plot_bottom.pdf"), p_bottom, width = 5, height = 3)
-    cat("\nResults written to:", file.path(outdir, "permutation_results.csv"), "\n")
-    quit(save = "no")
-  }
+actual_n <- nrow(shuf)
+if (actual_n < n_iter) {
+  warning("Only ", actual_n, " iterations available (requested ", n_iter, ").")
 }
 
-ggsave(
-  file.path(outdir, "permutation_plot.pdf"),
-  p_combined, width = 5, height = 6
+shuf_vals <- shuf$hits
+
+# ── Compute statistics ──────────────────────────────────────────────────────
+
+mean_shuf <- mean(shuf_vals)
+sd_shuf   <- sd(shuf_vals)
+z_score   <- if (sd_shuf > 0) (obs_hits - mean_shuf) / sd_shuf else NA_real_
+n_geq     <- sum(shuf_vals >= obs_hits)
+emp_p     <- (n_geq + 1) / (actual_n + 1)
+ana_p     <- pnorm(z_score, lower.tail = FALSE)
+
+cat("\n── Summary ──\n")
+cat("  Observed hits:  ", obs_hits, "\n")
+cat("  Shuffled mean:  ", round(mean_shuf, 1), "\n")
+cat("  Shuffled SD:    ", round(sd_shuf, 1), "\n")
+cat("  Z-score:        ", round(z_score, 2), "\n")
+cat("  Empirical p:    ", formatC(emp_p, format = "e", digits = 2), "\n")
+cat("  Analytical p:   ", formatC(ana_p, format = "e", digits = 2), "\n")
+cat("  N iterations:   ", actual_n, "\n")
+
+# ── Write plot-ready data ────────────────────────────────────────────────────
+
+out_df <- tibble(
+  iteration     = shuf$iteration,
+  shuffled_hits = shuf_vals,
+  observed_hits = obs_hits,
+  z_score       = z_score,
+  empirical_p   = emp_p,
+  analytical_p  = ana_p
 )
 
-cat("\nResults written to:", file.path(outdir, "permutation_results.csv"), "\n")
-cat("Plot written to:", file.path(outdir, "permutation_plot.pdf"), "\n")
+outfile <- file.path(outdir, "permutation_histogram_data.csv")
+write_csv(out_df, outfile)
+cat("\nHistogram data written to:", outfile, "\n")
