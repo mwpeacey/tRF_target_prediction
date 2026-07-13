@@ -287,8 +287,7 @@ build_alignment_card <- function(row) {
     class = "alignment-card",
     shiny::div(
       class = "meta",
-      shiny::tags$span(class = "trf", as_display_string(row$tRF[[1]])),
-      shiny::tags$span(class = "anticodon", as_display_string(row$tRNA_anticodon[[1]], "Anticodon N/A")),
+      shiny::tags$span(class = "tdrnamer", as_display_string(row$tDRnamer[[1]], "tDR N/A")),
       shiny::tags$span(class = "gene", as_display_string(row$gencode_gene_name[[1]], "\u2014")),
       shiny::tags$span(class = "loc", loc_text),
       shiny::tags$span(
@@ -422,7 +421,43 @@ format_coord_status <- function(parsed) {
   )
 }
 
-target_table_sql <- function(csv_path) {
+csv_column_names <- function(con, csv_path) {
+  info <- DBI::dbGetQuery(
+    con,
+    sprintf(
+      "DESCRIBE SELECT * FROM read_csv_auto('%s', HEADER = TRUE, SAMPLE_SIZE = 1)",
+      sql_escape(normalizePath(csv_path))
+    )
+  )
+  as.character(info$column_name)
+}
+
+target_table_sql <- function(csv_path, available_cols = character(0)) {
+  has_col <- function(name) name %in% available_cols
+
+  # Optional columns: degrade gracefully if the source CSV omits them so the
+  # app still loads instead of erroring at table-build time.
+  tdr_select <- if (has_col("tDRnamer")) {
+    "  NULLIF(tDRnamer, 'NA') AS tDRnamer, "
+  } else {
+    "  CAST(NULL AS VARCHAR) AS tDRnamer, "
+  }
+  tdr_search <- if (has_col("tDRnamer")) {
+    "    COALESCE(NULLIF(tDRnamer, 'NA'), ''), "
+  } else {
+    ""
+  }
+  gag_select <- if (has_col("gag_gene")) {
+    paste0(
+      "  CASE ",
+      "    WHEN UPPER(COALESCE(CAST(src.gag_gene AS VARCHAR), 'FALSE')) = 'TRUE' THEN TRUE ",
+      "    ELSE FALSE ",
+      "  END AS gag_gene, "
+    )
+  } else {
+    "  FALSE AS gag_gene, "
+  }
+
   paste0(
     "CREATE OR REPLACE TABLE targets AS ",
     "SELECT ",
@@ -432,11 +467,12 @@ target_table_sql <- function(csv_path) {
     "  CAST(\"end\" AS BIGINT) AS \"end\", ",
     "  strand, ",
     "  tRF, ",
+    tdr_select,
     "  NULLIF(tRNA_anticodon, 'NA') AS tRNA_anticodon, ",
     "  CAST(alignment_score AS DOUBLE) AS alignment_score, ",
     "  CAST(energy AS DOUBLE) AS energy, ",
     "  CASE ",
-    "    WHEN UPPER(COALESCE(CAST(LTR AS VARCHAR), 'FALSE')) = 'TRUE' THEN TRUE ",
+    "    WHEN UPPER(COALESCE(CAST(src.LTR AS VARCHAR), 'FALSE')) = 'TRUE' THEN TRUE ",
     "    ELSE FALSE ",
     "  END AS LTR, ",
     "  NULLIF(LTR_family, 'NA') AS LTR_family, ",
@@ -445,13 +481,11 @@ target_table_sql <- function(csv_path) {
     "  NULLIF(gencode_location, 'NA') AS gencode_location, ",
     "  NULLIF(stringtie_location, 'NA') AS stringtie_location, ",
     "  NULLIF(imprint_status, 'NA') AS imprint_status, ",
-    "  CASE ",
-    "    WHEN UPPER(COALESCE(CAST(gag_gene AS VARCHAR), 'FALSE')) = 'TRUE' THEN TRUE ",
-    "    ELSE FALSE ",
-    "  END AS gag_gene, ",
+    gag_select,
     "  query_alignment, match_string, ref_alignment, ",
     "  LOWER(CONCAT_WS(' ', ",
     "    COALESCE(tRF, ''), ",
+    tdr_search,
     "    COALESCE(NULLIF(tRNA_anticodon, 'NA'), ''), ",
     "    COALESCE(NULLIF(gencode_gene_name, 'NA'), ''), ",
     "    COALESCE(seqnames, ''), ",
@@ -463,7 +497,7 @@ target_table_sql <- function(csv_path) {
     "    COALESCE(NULLIF(stringtie_location, 'NA'), ''), ",
     "    COALESCE(NULLIF(imprint_status, 'NA'), '') ",
     "  )) AS search_text ",
-    "FROM read_csv_auto('", sql_escape(normalizePath(csv_path)), "', HEADER = TRUE, SAMPLE_SIZE = -1)"
+    "FROM read_csv_auto('", sql_escape(normalizePath(csv_path)), "', HEADER = TRUE, SAMPLE_SIZE = -1) AS src"
   )
 }
 
@@ -484,8 +518,15 @@ ensure_target_table <- function(con, csv_path, db_file, csv_available) {
   needs_refresh <- !file.exists(db_file) || file.info(db_file)$mtime < file.info(csv_path)$mtime
 
   if (!has_table || needs_refresh) {
+    available_cols <- csv_column_names(con, csv_path)
+    if (!("gag_gene" %in% available_cols)) {
+      warning("Source CSV has no 'gag_gene' column; defaulting Gag-derived to FALSE for all sites.")
+    }
+    if (!("tDRnamer" %in% available_cols)) {
+      warning("Source CSV has no 'tDRnamer' column; tDRnamer will display as blank.")
+    }
     DBI::dbExecute(con, "DROP TABLE IF EXISTS targets")
-    DBI::dbExecute(con, target_table_sql(csv_path))
+    DBI::dbExecute(con, target_table_sql(csv_path, available_cols))
   }
 }
 
@@ -625,15 +666,15 @@ sort_clause <- function(table_sort) {
   sort_columns <- switch(
     as.character(sort_spec$col),
     "0" = c("report_row_id"),
-    "1" = c("LOWER(COALESCE(tRF, ''))"),
-    "2" = c("LOWER(COALESCE(tRNA_anticodon, ''))"),
-    "3" = c("LOWER(COALESCE(seqnames, ''))", "start", "\"end\"", "LOWER(COALESCE(strand, ''))"),
-    "4" = c("alignment_score"),
-    "5" = c("energy"),
-    "6" = c("LOWER(COALESCE(gencode_gene_name, ''))"),
-    "7" = c("LOWER(COALESCE(gencode_location, ''))"),
-    "8" = c("LOWER(COALESCE(stringtie_location, ''))"),
-    "9" = c("LOWER(CASE WHEN LTR THEN COALESCE(LTR_family, 'LTR') ELSE 'None' END)"),
+    "1" = c("LOWER(COALESCE(tDRnamer, ''))"),
+    "2" = c("LOWER(COALESCE(seqnames, ''))", "start", "\"end\"", "LOWER(COALESCE(strand, ''))"),
+    "3" = c("alignment_score"),
+    "4" = c("energy"),
+    "5" = c("LOWER(COALESCE(gencode_gene_name, ''))"),
+    "6" = c("LOWER(COALESCE(gencode_location, ''))"),
+    "7" = c("LOWER(COALESCE(stringtie_location, ''))"),
+    "8" = c("LOWER(CASE WHEN LTR THEN COALESCE(LTR_family, 'LTR') ELSE 'None' END)"),
+    "9" = c("LOWER(CASE WHEN gag_gene THEN 'Yes' ELSE 'No' END)"),
     "10" = c("LOWER(COALESCE(imprint_status, ''))"),
     c("report_row_id")
   )
@@ -656,8 +697,7 @@ sort_label <- function(table_sort) {
 
   column_labels <- c(
     "Row ID",
-    "tRF",
-    "Anticodon",
+    "tDRnamer",
     "Location",
     "Alignment score",
     "Energy",
@@ -665,6 +705,7 @@ sort_label <- function(table_sort) {
     "GENCODE region",
     "StringTie region",
     "LTR",
+    "Gag",
     "Imprint status"
   )
 
@@ -841,6 +882,10 @@ ui <- shiny::fluidPage(
         color: var(--muted);
       }
       .trf {
+        font-weight: 700;
+        color: var(--ink) !important;
+      }
+      .tdrnamer {
         font-weight: 700;
         color: var(--ink) !important;
       }
@@ -1271,7 +1316,7 @@ server <- function(input, output, session) {
 
     sql <- paste(
       "SELECT",
-      "  report_row_id, tRF, tRNA_anticodon, seqnames, start, \"end\", strand,",
+      "  report_row_id, tRF, COALESCE(tDRnamer, '—') AS tDRnamer, tRNA_anticodon, seqnames, start, \"end\", strand,",
       "  alignment_score, energy,",
       "  COALESCE(gencode_gene_name, '—') AS gencode_gene_name,",
       "  COALESCE(gencode_location, '—') AS gencode_location,",
@@ -1340,8 +1385,7 @@ server <- function(input, output, session) {
     )
     display_df <- display_df[, c(
       "report_row_id",
-      "tRF",
-      "tRNA_anticodon",
+      "tDRnamer",
       "location",
       "alignment_score",
       "energy",
@@ -1353,7 +1397,7 @@ server <- function(input, output, session) {
       "imprint_status"
     )]
     names(display_df) <- c(
-      "Row", "tRF", "tRNA Anticodon", "Location",
+      "Row", "tDRnamer", "Location",
       "Alignment Score", "Energy", "Gene Name",
       "GENCODE Region", "StringTie Region",
       "LTR", "Gag", "Imprint Status"
@@ -1443,7 +1487,7 @@ server <- function(input, output, session) {
       con,
       sprintf(
         paste(
-          "SELECT report_row_id, seqnames, start, \"end\", strand, tRF, tRNA_anticodon,",
+          "SELECT report_row_id, seqnames, start, \"end\", strand, tRF, tDRnamer, tRNA_anticodon,",
           "alignment_score, energy, LTR, LTR_family, LTR_gene_id, gag_gene,",
           "gencode_gene_name, gencode_location, stringtie_location, imprint_status,",
           "query_alignment, match_string, ref_alignment",
@@ -1538,7 +1582,7 @@ server <- function(input, output, session) {
 
       sql <- paste(
         "SELECT",
-        "  tRF, tRNA_anticodon, seqnames, start, \"end\", strand,",
+        "  tRF, tDRnamer, tRNA_anticodon, seqnames, start, \"end\", strand,",
         "  alignment_score, energy,",
         "  LTR, LTR_family, LTR_gene_id, gag_gene,",
         "  gencode_gene_name, gencode_location,",
