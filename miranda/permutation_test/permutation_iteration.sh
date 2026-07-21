@@ -5,9 +5,10 @@
 #SBATCH --time=48:00:00
 
 ## Description
-## A single iteration of the permutation test. Dinucleotide-preserving shuffle
-## of either genome windows or query sequences, then miRanda on both strands
-## in parallel (one process per tRF), and counts hits.
+## A single iteration of the permutation test. Shuffles either genome windows
+## (dinucleotide-preserving, k=2) or query sequences (mononucleotide-preserving,
+## k=1), then runs miRanda on both strands in parallel (one process per tRF),
+## and counts hits.
 ##
 ## Designed to be submitted as a SLURM array job by run_permutation.sh.
 ## The iteration number comes from SLURM_ARRAY_TASK_ID.

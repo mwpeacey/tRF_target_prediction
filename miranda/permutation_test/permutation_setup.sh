@@ -25,7 +25,7 @@
 ## $4 : Output directory
 ## $5 : Run mode ("tRF" or "miRNA")
 ## $6 : Score threshold (e.g. 80)
-## $7 : Genome fraction (default: 0.05)
+## $7 : Genome fraction (default: 0.20)
 ## $8 : Random seed (default: 42)
 
 echo "Permutation setup started on $(date)"
@@ -41,7 +41,7 @@ SRNA_FA="$3"
 OUTDIR="$4"
 RUN_MODE="$5"
 SCORE_THRESHOLD="$6"
-FRACTION="${7:-0.05}"
+FRACTION="${7:-0.20}"
 SEED="${8:-42}"
 
 N_CORES=${SLURM_CPUS_PER_TASK:-16}

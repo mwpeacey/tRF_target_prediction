@@ -16,10 +16,17 @@
 #     observed_hits is the vertical line.
 #
 # Usage:
-#   Rscript permutation_zscore.R <score_threshold> <n_iterations>
+#   Rscript permutation_zscore.R <score_threshold> <n_iterations> [outdir]
 #
-# Example:
+#   outdir defaults to 'import/miranda/miranda_permutation/' if not given.
+#   Pass the output directory of the run you want to analyse — e.g. the
+#   query-shuffle run writes to a different directory than the genome-shuffle run.
+#
+# Example (genome shuffle, default dir):
 #   Rscript permutation_zscore.R 80 1000
+#
+# Example (query shuffle, explicit dir):
+#   Rscript permutation_zscore.R 80 1000 permutation_test_query
 ################################################################################
 
 library(tidyverse)
@@ -28,15 +35,16 @@ library(tidyverse)
 
 args <- commandArgs(TRUE)
 if (length(args) < 2) {
-  stop("Usage: Rscript permutation_zscore.R <score_threshold> <n_iterations>")
+  stop("Usage: Rscript permutation_zscore.R <score_threshold> <n_iterations> [outdir]")
 }
 
 score_threshold <- as.integer(args[1])
 n_iter          <- as.integer(args[2])
-outdir          <- 'import/miranda/miranda_permutation/'
+outdir          <- if (length(args) >= 3) args[3] else 'import/miranda/miranda_permutation/'
 
 cat("Score threshold:", score_threshold, "\n")
 cat("Iterations requested:", n_iter, "\n")
+cat("Output directory:", outdir, "\n")
 
 # ── Load data ────────────────────────────────────────────────────────────────
 

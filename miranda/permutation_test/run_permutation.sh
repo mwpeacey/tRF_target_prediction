@@ -56,7 +56,7 @@ RUN_MODE="$5"
 SHUFFLE_TARGET="$6"
 SCORE_THRESHOLD="$7"
 N_ITER="$8"
-FRACTION="${9:-0.05}"
+FRACTION="${9:-0.20}"
 SEED="${10:-42}"
 QOS="${11:-slow_nice}"
 
