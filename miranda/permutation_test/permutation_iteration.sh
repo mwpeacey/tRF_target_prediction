@@ -123,10 +123,16 @@ export TARGET_PLUS TARGET_MINUS MIRANDA_FLAGS RESULT_DIR
 echo "[$(date)] Iteration ${ITER}: scanning with ${N_CORES} cores..."
 parallel -j "$N_CORES" run_one_trf ::: "${QUERY_DIR}"/*.fa
 
-# ── 3. Count hits ─────────────────────────────────────────────────────────
+# ── 3. Count hits and record the per-(tRF,score) histogram ────────────────
+# The count feeds the existing global z-test; the score histogram is the null
+# score distribution consumed by karlin_altschul_significance.py --null.
 
 HITS=$(grep -c "Scores for this hit:" "${RESULT_DIR}"/result_* | awk -F: '{s+=$2} END {print s+0}')
 echo -e "${ITER}\t${HITS}" > "${OUTDIR}/iterations/hits_${ITER}.txt"
+
+python3 "${SCRIPTS}/miranda/permutation_test/parse_miranda_hits.py" \
+  --out "${OUTDIR}/iterations/scores_${ITER}.csv" \
+  "${RESULT_DIR}"/result_*
 
 echo "[$(date)] Iteration ${ITER} complete. Hits: ${HITS}"
 

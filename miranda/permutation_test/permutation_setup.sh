@@ -136,5 +136,11 @@ echo "[$(date)] All miRanda jobs complete."
 HITS=$(grep -c "Scores for this hit:" "${REAL_DIR}"/result_* | awk -F: '{s+=$2} END {print s+0}')
 echo "$HITS" > "${OUTDIR}/observed_hits.txt"
 
+# Per-(tRF,score) histogram of the real 20% scan — a cross-check that the null
+# (shuffled) score distribution matches the real one in the chance-dominated bulk.
+python3 "${SCRIPTS}/miranda/permutation_test/parse_miranda_hits.py" \
+  --out "${OUTDIR}/observed_score_histogram.csv" \
+  "${REAL_DIR}"/result_*
+
 echo "[$(date)] Observed hits at threshold ${SCORE_THRESHOLD}: ${HITS}"
 echo "[$(date)] Permutation setup complete."

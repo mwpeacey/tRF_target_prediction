@@ -117,7 +117,7 @@ CONSOLIDATE_JOB=$(sbatch --parsable \
   --job-name=perm_consolidate \
   --output="${OUTDIR}/permutation_consolidate_output.txt" \
   --error="${OUTDIR}/permutation_consolidate_output.txt" \
-  --wrap="echo -e 'iteration\thits' > ${OUTDIR}/shuffled_hits.tsv && cat ${OUTDIR}/iterations/hits_*.txt | sort -n >> ${OUTDIR}/shuffled_hits.tsv && echo 'Consolidation complete.'"
+  --wrap="echo -e 'iteration\thits' > ${OUTDIR}/shuffled_hits.tsv && cat ${OUTDIR}/iterations/hits_*.txt | sort -n >> ${OUTDIR}/shuffled_hits.tsv && awk -F, 'FNR==1{next} {c[\$1 FS \$2]+=\$3} END{print \"tRF,alignment_score,count\"; for(k in c) print k FS c[k]}' ${OUTDIR}/iterations/scores_*.csv > ${OUTDIR}/shuffled_score_histogram.csv && echo 'Consolidation complete.'"
 )
 
 echo "Submitted consolidation job: ${CONSOLIDATE_JOB} (depends on ${ITER_JOB})"
@@ -126,9 +126,20 @@ echo ""
 echo "Pipeline submitted. Monitor with:"
 echo "  squeue -u \$USER"
 echo ""
-echo "Once complete, run the R analysis locally:"
-echo "  Rscript permutation_zscore.R ${SCORE_THRESHOLD} ${N_ITER}"
+echo "Once complete:"
+echo "  # Global enrichment z-test (aggregate hit count):"
+echo "  Rscript permutation_zscore.R ${SCORE_THRESHOLD} ${N_ITER} ${OUTDIR}"
+echo ""
+echo "  # Per-prediction Karlin-Altschul E-value / FDR, using the shuffled null"
+echo "  # to score your REAL whole-genome predictions:"
+echo "  python3 miranda/permutation_test/karlin_altschul_significance.py \\"
+echo "      import/miranda/miranda_output_${SCORE_THRESHOLD}.csv \\"
+echo "      import/miranda/miranda_output_${SCORE_THRESHOLD}_ka.csv \\"
+echo "      --null ${OUTDIR}/shuffled_score_histogram.csv \\"
+echo "      --null-fraction ${FRACTION} --null-iterations ${N_ITER} \\"
+echo "      --summary import/miranda/ka_summary.csv"
 echo ""
 echo "Output files:"
-echo "  ${OUTDIR}/observed_hits.txt    (single integer: real hit count)"
-echo "  ${OUTDIR}/shuffled_hits.tsv    (iteration + hits per shuffle)"
+echo "  ${OUTDIR}/observed_hits.txt              (single integer: real hit count)"
+echo "  ${OUTDIR}/shuffled_hits.tsv              (iteration + hits per shuffle)"
+echo "  ${OUTDIR}/shuffled_score_histogram.csv   (tRF,score,count — the NULL distribution)"
