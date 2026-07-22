@@ -67,12 +67,20 @@ mkdir -p "${OUTDIR}"
 
 echo "[$(date)] Sampling windows (fraction=${FRACTION}, seed=${SEED})..."
 
-python3 "${SCRIPTS}/miranda/permutation_test/sample_windows_from_fasta.py" \
+if ! python3 "${SCRIPTS}/miranda/permutation_test/sample_windows_from_fasta.py" \
   "${WINDOWS_PLUS}" \
   "${WINDOWS_MINUS}" \
   "${OUTDIR}/real_windows.fa" \
   --fraction "$FRACTION" \
-  --seed "$SEED"
+  --seed "$SEED"; then
+  echo "ERROR: window sampling failed — aborting setup." >&2
+  exit 1
+fi
+
+if [ ! -s "${OUTDIR}/real_windows.fa" ]; then
+  echo "ERROR: ${OUTDIR}/real_windows.fa is missing or empty — aborting setup." >&2
+  exit 1
+fi
 
 N_WINDOWS=$(grep -c "^>" "${OUTDIR}/real_windows.fa")
 echo "[$(date)] Sampled ${N_WINDOWS} pooled window targets."

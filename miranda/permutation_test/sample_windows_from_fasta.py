@@ -54,7 +54,19 @@ def iter_fasta(path):
 
 
 def chrom_of(header):
-    return re.split(r"[:\(\t ]", header.split()[0])[0]
+    """
+    Chromosome name from a window header.
+
+    Window FASTAs are produced by `bedtools getfasta -name`, giving headers of
+    the form "<bed_name>::<chrom>:<start>-<end>" (the same format parsed in
+    miranda_to_bed.R). Everything before '::' is the BED name, so it must be
+    dropped before reading the chromosome. Plain "<chrom>:<start>-<end>" and
+    bare "<chrom>" headers are also handled.
+    """
+    tok = header.split()[0]
+    if "::" in tok:
+        tok = tok.split("::", 1)[1]
+    return re.split(r"[:\(\t ]", tok)[0]
 
 
 def write_record(handle, header, seq, width=80):
@@ -66,6 +78,26 @@ def write_record(handle, header, seq, width=80):
 def eligible_indices(path, chroms):
     """Return the list of record indices whose chromosome is in `chroms`."""
     return [i for i, (h, _s) in enumerate(iter_fasta(path)) if chrom_of(h) in chroms]
+
+
+def diagnose(path, chroms, n=5):
+    """Print the first few headers and the distinct parsed chromosome names."""
+    headers, parsed = [], []
+    for i, (h, _s) in enumerate(iter_fasta(path)):
+        if i < n:
+            headers.append(h)
+        c = chrom_of(h)
+        if c not in parsed:
+            parsed.append(c)
+        if len(parsed) >= 25 and i > 1000:
+            break
+    print(f"\n--- diagnostics for {path} ---", file=sys.stderr)
+    print("First headers:", file=sys.stderr)
+    for h in headers:
+        print(f"    >{h}", file=sys.stderr)
+    print(f"Parsed chromosome names (first {len(parsed)} distinct): "
+          f"{parsed}", file=sys.stderr)
+    print(f"Expected any of: {sorted(chroms)}", file=sys.stderr)
 
 
 def main():
@@ -89,8 +121,10 @@ def main():
     minus_elig = eligible_indices(args.windows_minus, chroms)
     pool = [("+", i) for i in plus_elig] + [("-", i) for i in minus_elig]
     if not pool:
-        sys.exit("ERROR: no eligible windows after chromosome filtering — check "
-                 "header format with `grep '>' <file> | head`.")
+        print("ERROR: no eligible windows after chromosome filtering.",
+              file=sys.stderr)
+        diagnose(args.windows_plus, chroms)
+        sys.exit(1)
 
     n_sample = max(1, int(len(pool) * args.fraction))
     selected = set(random.sample(pool, n_sample))
