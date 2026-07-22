@@ -7,73 +7,82 @@
 #SBATCH --error=permutation_setup_output.txt
 
 ## Description
-## One-time setup for the permutation test. Selects a random subset of
-## non-overlapping 10 kbp windows from the genome, extracts their sequences
-## (plus and minus strand), splits the sRNA FASTA into individual queries,
-## and runs miRanda on the real (unshuffled) sequences in parallel.
+## One-time setup for the permutation test. Samples a random subset of the
+## PRE-GENERATED 10 kbp window FASTAs used for the real miRanda scan (plus and
+## minus strand), splits the sRNA FASTA into individual queries, and runs
+## miRanda on the real (unshuffled) sequences in parallel.
+##
+## Sampling from the same windows as the real scan guarantees an identical
+## search space (boundaries, coordinates, strand handling) — no genome
+## re-windowing, bedtools or seqkit needed.
 ##
 ## Called by run_permutation.sh — not normally submitted directly.
 
 ## Requirements
-## bedtools (2.31.1), seqkit (2.10.0), miranda (1.9)
-## Python 3.6+, GNU parallel
+## miranda (1.9), Python 3.6+, GNU parallel
 
 ## Inputs
 ## $1 : Scripts directory
-## $2 : Genome FASTA (indexed with samtools faidx)
+## $2 : Plus-strand window FASTA (pre-generated; e.g. *_10000bp_windows.fa).
+##      The minus-strand file is derived by replacing '_windows.fa' with
+##      '_windows_minus.fa'.
 ## $3 : Small RNA FASTA
 ## $4 : Output directory
 ## $5 : Run mode ("tRF" or "miRNA")
 ## $6 : Score threshold (e.g. 80)
-## $7 : Genome fraction (default: 0.20)
+## $7 : Window fraction to sample (default: 0.20)
 ## $8 : Random seed (default: 42)
+## $9 : Chromosomes to restrict windows to (comma-separated; default: all)
 
 echo "Permutation setup started on $(date)"
 
 if [ "$#" -lt 6 ]; then
-  echo "Usage: $0 <scripts_dir> <genome.fa> <sRNA.fa> <out_dir> <run_mode> <score_threshold> [fraction] [seed]" >&2
+  echo "Usage: $0 <scripts_dir> <windows_plus.fa> <sRNA.fa> <out_dir> <run_mode> <score_threshold> [fraction] [seed] [chroms]" >&2
   exit 1
 fi
 
 SCRIPTS="$1"
-GENOME_FA="$2"
+WINDOWS_PLUS="$2"
 SRNA_FA="$3"
 OUTDIR="$4"
 RUN_MODE="$5"
 SCORE_THRESHOLD="$6"
 FRACTION="${7:-0.20}"
 SEED="${8:-42}"
+CHROMS="${9:-}"
+
+# Derive the minus-strand window file by naming convention.
+WINDOWS_MINUS="${WINDOWS_PLUS/_windows.fa/_windows_minus.fa}"
+if [ ! -f "$WINDOWS_MINUS" ]; then
+  echo "ERROR: expected minus-strand windows at '${WINDOWS_MINUS}' (derived from" >&2
+  echo "       '${WINDOWS_PLUS}'). Rename it to match, or edit this script." >&2
+  exit 1
+fi
 
 N_CORES=${SLURM_CPUS_PER_TASK:-16}
 
 mkdir -p "${OUTDIR}"
 
-# ── 1. Select non-overlapping windows ─────────────────────────────────────
+# ── 1. Sample windows from the pre-generated window FASTAs ────────────────
 
-echo "[$(date)] Selecting windows (fraction=${FRACTION}, seed=${SEED})..."
+echo "[$(date)] Sampling windows (fraction=${FRACTION}, seed=${SEED}, chroms=${CHROMS:-all})..."
 
-python3 "${SCRIPTS}/miranda/permutation_test/select_windows.py" \
-  "${GENOME_FA}" \
-  "${OUTDIR}/selected_windows.bed" \
+CHROMS_ARG=()
+if [ -n "$CHROMS" ]; then
+  CHROMS_ARG=(--chroms "$CHROMS")
+fi
+
+python3 "${SCRIPTS}/miranda/permutation_test/sample_windows_from_fasta.py" \
+  "${WINDOWS_PLUS}" \
+  "${WINDOWS_MINUS}" \
+  "${OUTDIR}/real_windows.fa" \
+  "${OUTDIR}/real_windows_minus.fa" \
   --fraction "$FRACTION" \
-  --window 10000 \
-  --seed "$SEED"
+  --seed "$SEED" \
+  "${CHROMS_ARG[@]}"
 
-N_WINDOWS=$(wc -l < "${OUTDIR}/selected_windows.bed")
-echo "[$(date)] Selected ${N_WINDOWS} windows."
-
-# ── 2. Extract real sequences ─────────────────────────────────────────────
-
-echo "[$(date)] Extracting real window sequences..."
-
-bedtools getfasta \
-  -fi "$GENOME_FA" \
-  -bed "${OUTDIR}/selected_windows.bed" \
-  -name \
-  -fo "${OUTDIR}/real_windows.fa"
-
-seqkit seq -r -p "${OUTDIR}/real_windows.fa" \
-  > "${OUTDIR}/real_windows_minus.fa"
+N_WINDOWS=$(grep -c "^>" "${OUTDIR}/real_windows.fa")
+echo "[$(date)] Sampled ${N_WINDOWS} windows."
 
 # ── 3. Split sRNA FASTA into individual files ─────────────────────────────
 
@@ -82,10 +91,16 @@ echo "[$(date)] Splitting sRNA FASTA into individual queries..."
 SRNA_DIR="${OUTDIR}/sRNA_queries"
 mkdir -p "$SRNA_DIR"
 
+# The FASTA header (e.g. ">tDR-55:76-Ala-AGC-1|tRF_1 Sprinzl_position: 55..76")
+# is written unchanged into each file, so miRanda still reports the full tDRnamer
+# id in its output. Only the *filename* is sanitised, because tDRnamer ids contain
+# '|' and ':' which are awkward on the shell.
 awk '/^>/ {
   if (out) close(out)
   name = substr($1, 2)
-  out = "'"${SRNA_DIR}"'/" name ".fa"
+  fname = name
+  gsub(/[|:\/ ]/, "_", fname)
+  out = "'"${SRNA_DIR}"'/" fname ".fa"
   print > out
   next
 }

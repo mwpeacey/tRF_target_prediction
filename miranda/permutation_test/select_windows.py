@@ -23,10 +23,15 @@ import random
 import sys
 
 
-def parse_fasta_windows(genome_fa, window_size, max_n_frac):
+def parse_fasta_windows(genome_fa, window_size, max_n_frac, chroms=None):
     """
     Read genome FASTA in a single pass. For each chromosome, accumulate
     sequence and evaluate non-overlapping windows on the fly.
+
+    chroms : optional set of chromosome names to restrict sampling to. When
+    given, sequences whose name is not in the set are skipped entirely (not
+    accumulated), so the null search space matches the real analysis (e.g. the
+    canonical chromosomes, excluding unplaced scaffolds / alt contigs / chrM).
 
     Returns a list of eligible (chrom, start, end) tuples and counts of
     total/excluded windows.
@@ -36,6 +41,7 @@ def parse_fasta_windows(genome_fa, window_size, max_n_frac):
     n_excluded = 0
 
     current_chrom = None
+    keep = True
     seq_buf = []
     buf_len = 0
 
@@ -57,19 +63,20 @@ def parse_fasta_windows(genome_fa, window_size, max_n_frac):
     with open(genome_fa) as f:
         for line in f:
             if line.startswith(">"):
-                # Process previous chromosome
-                if current_chrom is not None:
+                # Process previous chromosome (only if it was kept)
+                if current_chrom is not None and keep:
                     flush_windows(current_chrom, seq_buf, buf_len)
                 current_chrom = line[1:].split()[0]
+                keep = (chroms is None) or (current_chrom in chroms)
                 seq_buf = []
                 buf_len = 0
-            else:
+            elif keep:
                 stripped = line.rstrip("\n")
                 seq_buf.append(stripped)
                 buf_len += len(stripped)
 
         # Final chromosome
-        if current_chrom is not None:
+        if current_chrom is not None and keep:
             flush_windows(current_chrom, seq_buf, buf_len)
 
     return eligible, n_total, n_excluded
@@ -102,14 +109,26 @@ def main():
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed (default: 42)"
     )
+    parser.add_argument(
+        "--chroms",
+        default=None,
+        help="Comma-separated chromosomes to restrict sampling to "
+        "(e.g. chr1,chr2,...,chrX,chrY). Default: all sequences in the FASTA. "
+        "Use this to match the null search space to the real analysis.",
+    )
     args = parser.parse_args()
 
     random.seed(args.seed)
 
+    chroms = set(args.chroms.split(",")) if args.chroms else None
+    if chroms:
+        print(f"Restricting to {len(chroms)} chromosomes: "
+              f"{','.join(sorted(chroms))}", file=sys.stderr)
+
     print("Reading genome and filtering windows...", file=sys.stderr)
 
     eligible, n_total, n_excluded = parse_fasta_windows(
-        args.genome_fa, args.window, args.max_n_frac
+        args.genome_fa, args.window, args.max_n_frac, chroms=chroms
     )
 
     print(
