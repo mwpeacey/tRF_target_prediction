@@ -2,29 +2,30 @@
 """
 sample_windows_from_fasta.py
 
-Sample a random subset of pre-generated genomic windows for the permutation null.
+Sample a random subset of the pre-generated genomic window targets for the
+permutation null, drawing with equal probability from BOTH the plus- and
+minus-strand window FASTAs used for the real miRanda scan.
 
-Instead of re-windowing the genome (select_windows.py + bedtools getfasta), this
-samples directly from the SAME window FASTAs that were used for the real miRanda
-scan. That guarantees the null and the real analysis share an identical search
-space: same window boundaries, coordinates, strand handling and N-masking.
+The real scan treats each strand as an independent target: it runs miRanda
+against windows.fa (plus) and windows_minus.fa (minus) separately. This mirrors
+that exactly — it pools the records of both files and samples uniformly across
+the combined set, so a sampled target is equally likely to be a plus- or
+minus-strand window. No reverse-complementation is performed anywhere: the two
+strands are just separate target sequences, as in the real prediction. The
+sampled targets are written to a single FASTA which is then shuffled (k=2) and
+scanned as one target set in each permutation iteration.
 
-Plus- and minus-strand window files are matched by RECORD ORDER (the Nth record
-of the plus file corresponds to the Nth record of the minus file), which is how
-the minus file is produced (reverse-complement of the plus, order preserved). The
-two files must therefore have the same number of records; this is checked.
-
-Optional --chroms restricts sampling to the given chromosomes (e.g. the canonical
-set), so the null matches the chromosomes your downstream analysis keeps. The
-chromosome is parsed from the start of each window header, up to the first ':',
-whitespace or '('  (handles headers like ">chr1:0-10000", ">chr1:0-10000(+)",
-">chr1").
+Sampling restricts to the canonical chromosomes (CANONICAL below), matching the
+downstream analysis. The chromosome is parsed from the start of each header, up
+to the first ':', whitespace or '('  (handles ">chr1:0-10000", ">chr1:0-10000(+)",
+">chr1"). Plus/minus record headers are tagged with |+ / |- to keep names unique
+in the pooled file (the target name is irrelevant to the null, which keys only on
+the tRF query and score).
 
 Usage:
     python3 sample_windows_from_fasta.py \
-        windows_plus.fa windows_minus.fa \
-        out_plus.fa out_minus.fa \
-        --fraction 0.20 --seed 42 [--chroms chr1,chr2,...,chrX,chrY]
+        windows_plus.fa windows_minus.fa out_windows.fa \
+        --fraction 0.20 --seed 42
 
 Requirements: Python 3.6+
 """
@@ -34,18 +35,18 @@ import random
 import re
 import sys
 
+# Canonical mouse chromosomes (mm10 / GRCm38), matching annotate_targets.R.
+CANONICAL = ["chr" + c for c in [str(i) for i in range(1, 20)] + ["X", "Y"]]
+
 
 def iter_fasta(path):
-    """Yield (header_line_without_>, sequence_string) for each record."""
-    header = None
-    parts = []
+    header, parts = None, []
     with open(path) as f:
         for line in f:
             if line.startswith(">"):
                 if header is not None:
                     yield header, "".join(parts)
-                header = line[1:].rstrip("\n")
-                parts = []
+                header, parts = line[1:].rstrip("\n"), []
             else:
                 parts.append(line.rstrip("\n"))
     if header is not None:
@@ -53,9 +54,7 @@ def iter_fasta(path):
 
 
 def chrom_of(header):
-    """Extract chromosome name from a window header."""
-    tok = header.split()[0]                 # first whitespace-delimited token
-    return re.split(r"[:\(\t ]", tok)[0]    # up to ':' '(' or whitespace
+    return re.split(r"[:\(\t ]", header.split()[0])[0]
 
 
 def write_record(handle, header, seq, width=80):
@@ -64,66 +63,54 @@ def write_record(handle, header, seq, width=80):
         handle.write(seq[i : i + width] + "\n")
 
 
+def eligible_indices(path, chroms):
+    """Return the list of record indices whose chromosome is in `chroms`."""
+    return [i for i, (h, _s) in enumerate(iter_fasta(path)) if chrom_of(h) in chroms]
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("windows_plus")
     ap.add_argument("windows_minus")
-    ap.add_argument("out_plus")
-    ap.add_argument("out_minus")
+    ap.add_argument("out_windows")
     ap.add_argument("--fraction", type=float, default=0.20)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--chroms", default=None,
-                    help="Comma-separated chromosomes to restrict to (default: all)")
+                    help="Comma-separated chromosomes to restrict to. "
+                         "Default: the canonical set hardcoded in this script.")
     args = ap.parse_args()
 
     random.seed(args.seed)
-    chroms = set(args.chroms.split(",")) if args.chroms else None
+    chroms = set(args.chroms.split(",")) if args.chroms else set(CANONICAL)
 
-    # ── Pass 1: index every plus record, note its chromosome ─────────────────
-    idx_chrom = []
-    for i, (header, _seq) in enumerate(iter_fasta(args.windows_plus)):
-        idx_chrom.append((i, chrom_of(header)))
-    n_total = len(idx_chrom)
-
-    eligible = [i for i, c in idx_chrom if (chroms is None or c in chroms)]
-    if chroms is not None:
-        seen = sorted({c for _, c in idx_chrom})
-        kept = sorted({c for i, c in idx_chrom if c in chroms})
-        print(f"Chromosome filter: kept {kept}", file=sys.stderr)
-        missing = chroms - set(seen)
-        if missing:
-            print(f"WARNING: requested chromosomes not found in windows: "
-                  f"{sorted(missing)}", file=sys.stderr)
-    if not eligible:
+    # Pass 1: build the combined eligible pool, tagged by strand.
+    plus_elig = eligible_indices(args.windows_plus, chroms)
+    minus_elig = eligible_indices(args.windows_minus, chroms)
+    pool = [("+", i) for i in plus_elig] + [("-", i) for i in minus_elig]
+    if not pool:
         sys.exit("ERROR: no eligible windows after chromosome filtering — check "
-                 "the window header format with `grep '>' <file> | head`.")
+                 "header format with `grep '>' <file> | head`.")
 
-    n_sample = max(1, int(len(eligible) * args.fraction))
-    selected = set(random.sample(eligible, n_sample))
-    print(f"Sampled {n_sample} of {len(eligible)} eligible windows "
-          f"({args.fraction:.0%}); {n_total} total records", file=sys.stderr)
+    n_sample = max(1, int(len(pool) * args.fraction))
+    selected = set(random.sample(pool, n_sample))
+    sel_plus = {i for s, i in selected if s == "+"}
+    sel_minus = {i for s, i in selected if s == "-"}
+    print(f"Pooled {len(plus_elig)} plus + {len(minus_elig)} minus canonical "
+          f"windows; sampled {n_sample} ({args.fraction:.0%}): "
+          f"{len(sel_plus)} plus, {len(sel_minus)} minus", file=sys.stderr)
 
-    # ── Pass 2: write selected plus records ──────────────────────────────────
-    with open(args.out_plus, "w") as out:
+    # Pass 2: write the selected records from each file, strand-tagged.
+    with open(args.out_windows, "w") as out:
         for i, (header, seq) in enumerate(iter_fasta(args.windows_plus)):
-            if i in selected:
-                write_record(out, header, seq)
-
-    # ── Pass 3: write the SAME indices from the minus file ───────────────────
-    n_minus = 0
-    with open(args.out_minus, "w") as out:
+            if i in sel_plus:
+                write_record(out, header.split()[0] + "|+", seq)
         for i, (header, seq) in enumerate(iter_fasta(args.windows_minus)):
-            n_minus += 1
-            if i in selected:
-                write_record(out, header, seq)
+            if i in sel_minus:
+                write_record(out, header.split()[0] + "|-", seq)
 
-    if n_minus != n_total:
-        sys.exit(f"ERROR: plus ({n_total}) and minus ({n_minus}) window files have "
-                 f"different record counts — cannot match by order. Ensure the minus "
-                 f"file is the reverse-complement of the plus file in the same order.")
-
-    print(f"Wrote {n_sample} plus + {n_sample} minus windows.", file=sys.stderr)
+    print(f"Wrote {n_sample} pooled window targets -> {args.out_windows}",
+          file=sys.stderr)
 
 
 if __name__ == "__main__":

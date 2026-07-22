@@ -5,16 +5,18 @@
 #SBATCH --time=48:00:00
 
 ## Description
-## A single iteration of the permutation test. Shuffles either genome windows
-## (dinucleotide-preserving, k=2) or query sequences (mononucleotide-preserving,
-## k=1), then runs miRanda on both strands in parallel (one process per tRF),
-## and counts hits.
+## A single iteration of the permutation test. Shuffles either the pooled window
+## targets (dinucleotide-preserving, k=2) or the query sequences (mononucleotide-
+## preserving, k=1), then runs miRanda (one process per tRF) against the single
+## pooled target file, and counts hits. Both strands are already present as
+## separate records in the pooled target file, so no reverse-complementation is
+## performed.
 ##
 ## Designed to be submitted as a SLURM array job by run_permutation.sh.
 ## The iteration number comes from SLURM_ARRAY_TASK_ID.
 
 ## Requirements
-## miranda (1.9), seqkit (2.10.0), GNU parallel
+## miranda (1.9), GNU parallel
 ## Python 3.6+ with ushuffle
 
 ## Inputs
@@ -53,7 +55,7 @@ mkdir -p "$ITER_DIR"
 # ── 1. Shuffle sequences ────────────────────────────────────────────────
 
 if [ "$SHUFFLE_TARGET" == "genome" ]; then
-  echo "[$(date)] Iteration ${ITER}: shuffling genome windows..."
+  echo "[$(date)] Iteration ${ITER}: shuffling pooled window targets..."
 
   python3 "${SCRIPTS}/miranda/permutation_test/shuffle_fasta.py" \
     "${OUTDIR}/real_windows.fa" \
@@ -61,11 +63,7 @@ if [ "$SHUFFLE_TARGET" == "genome" ]; then
     --seed "$ITER" \
     --klet 2
 
-  seqkit seq -r -p "${ITER_DIR}/shuffled_windows.fa" \
-    > "${ITER_DIR}/shuffled_windows_minus.fa"
-
-  TARGET_PLUS="${ITER_DIR}/shuffled_windows.fa"
-  TARGET_MINUS="${ITER_DIR}/shuffled_windows_minus.fa"
+  TARGET="${ITER_DIR}/shuffled_windows.fa"
   QUERY_DIR="${OUTDIR}/sRNA_queries"
 
 elif [ "$SHUFFLE_TARGET" == "query" ]; then
@@ -82,8 +80,7 @@ elif [ "$SHUFFLE_TARGET" == "query" ]; then
       --klet 1
   done
 
-  TARGET_PLUS="${OUTDIR}/real_windows.fa"
-  TARGET_MINUS="${OUTDIR}/real_windows_minus.fa"
+  TARGET="${OUTDIR}/real_windows.fa"
 else
   echo "ERROR: SHUFFLE_TARGET must be 'genome' or 'query'" >&2
   exit 1
@@ -107,18 +104,15 @@ run_one_trf() {
   local SRNA_FILE="$1"
   local SRNA_NAME=$(basename "${SRNA_FILE}" .fa)
 
-  miranda "$SRNA_FILE" "$TARGET_PLUS" \
+  # Single scan against the pooled target file (both strands are separate
+  # records within it).
+  miranda "$SRNA_FILE" "$TARGET" \
     ${MIRANDA_FLAGS} \
-    -out "${RESULT_DIR}/result_${SRNA_NAME}_plus" \
-    -quiet
-
-  miranda "$SRNA_FILE" "$TARGET_MINUS" \
-    ${MIRANDA_FLAGS} \
-    -out "${RESULT_DIR}/result_${SRNA_NAME}_minus" \
+    -out "${RESULT_DIR}/result_${SRNA_NAME}" \
     -quiet
 }
 export -f run_one_trf
-export TARGET_PLUS TARGET_MINUS MIRANDA_FLAGS RESULT_DIR
+export TARGET MIRANDA_FLAGS RESULT_DIR
 
 echo "[$(date)] Iteration ${ITER}: scanning with ${N_CORES} cores..."
 parallel -j "$N_CORES" run_one_trf ::: "${QUERY_DIR}"/*.fa
@@ -139,7 +133,7 @@ echo "[$(date)] Iteration ${ITER} complete. Hits: ${HITS}"
 # ── 4. Clean up ──────────────────────────────────────────────────────────
 
 rm -rf "${RESULT_DIR}"
-rm -f "${ITER_DIR}/shuffled_windows.fa" "${ITER_DIR}/shuffled_windows_minus.fa"
+rm -f "${ITER_DIR}/shuffled_windows.fa"
 rm -rf "${ITER_DIR}/shuffled_queries"
 rmdir "${ITER_DIR}" 2>/dev/null
 

@@ -24,20 +24,19 @@
 ## Inputs
 ## $1 : Scripts directory
 ## $2 : Plus-strand window FASTA (pre-generated; e.g. *_10000bp_windows.fa).
-##      The minus-strand file is derived by replacing '_windows.fa' with
-##      '_windows_minus.fa'.
+##      The minus-strand file is found by replacing '_windows.fa' with
+##      '_windows_minus.fa'; both are pooled and sampled together.
 ## $3 : Small RNA FASTA
 ## $4 : Output directory
 ## $5 : Run mode ("tRF" or "miRNA")
 ## $6 : Score threshold (e.g. 80)
 ## $7 : Window fraction to sample (default: 0.20)
 ## $8 : Random seed (default: 42)
-## $9 : Chromosomes to restrict windows to (comma-separated; default: all)
 
 echo "Permutation setup started on $(date)"
 
 if [ "$#" -lt 6 ]; then
-  echo "Usage: $0 <scripts_dir> <windows_plus.fa> <sRNA.fa> <out_dir> <run_mode> <score_threshold> [fraction] [seed] [chroms]" >&2
+  echo "Usage: $0 <scripts_dir> <windows_plus.fa> <sRNA.fa> <out_dir> <run_mode> <score_threshold> [fraction] [seed]" >&2
   exit 1
 fi
 
@@ -49,9 +48,7 @@ RUN_MODE="$5"
 SCORE_THRESHOLD="$6"
 FRACTION="${7:-0.20}"
 SEED="${8:-42}"
-CHROMS="${9:-}"
 
-# Derive the minus-strand window file by naming convention.
 WINDOWS_MINUS="${WINDOWS_PLUS/_windows.fa/_windows_minus.fa}"
 if [ ! -f "$WINDOWS_MINUS" ]; then
   echo "ERROR: expected minus-strand windows at '${WINDOWS_MINUS}' (derived from" >&2
@@ -63,26 +60,22 @@ N_CORES=${SLURM_CPUS_PER_TASK:-16}
 
 mkdir -p "${OUTDIR}"
 
-# ── 1. Sample windows from the pre-generated window FASTAs ────────────────
+# ── 1. Sample windows from the pooled plus + minus target files ───────────
+# Draws uniformly from both strand files (canonical chromosomes, hardcoded),
+# exactly as the real scan treats plus and minus as separate targets. No
+# reverse-complementation: the sampled targets are a single pooled FASTA.
 
-echo "[$(date)] Sampling windows (fraction=${FRACTION}, seed=${SEED}, chroms=${CHROMS:-all})..."
-
-CHROMS_ARG=()
-if [ -n "$CHROMS" ]; then
-  CHROMS_ARG=(--chroms "$CHROMS")
-fi
+echo "[$(date)] Sampling windows (fraction=${FRACTION}, seed=${SEED})..."
 
 python3 "${SCRIPTS}/miranda/permutation_test/sample_windows_from_fasta.py" \
   "${WINDOWS_PLUS}" \
   "${WINDOWS_MINUS}" \
   "${OUTDIR}/real_windows.fa" \
-  "${OUTDIR}/real_windows_minus.fa" \
   --fraction "$FRACTION" \
-  --seed "$SEED" \
-  "${CHROMS_ARG[@]}"
+  --seed "$SEED"
 
 N_WINDOWS=$(grep -c "^>" "${OUTDIR}/real_windows.fa")
-echo "[$(date)] Sampled ${N_WINDOWS} windows."
+echo "[$(date)] Sampled ${N_WINDOWS} pooled window targets."
 
 # ── 3. Split sRNA FASTA into individual files ─────────────────────────────
 
@@ -129,14 +122,11 @@ run_one_trf() {
   local SRNA_FILE="$1"
   local SRNA_NAME=$(basename "${SRNA_FILE}" .fa)
 
+  # Single scan against the pooled target file (both strands are separate
+  # records within it).
   miranda "$SRNA_FILE" "${OUTDIR}/real_windows.fa" \
     ${MIRANDA_FLAGS} \
-    -out "${REAL_DIR}/result_${SRNA_NAME}_plus" \
-    -quiet
-
-  miranda "$SRNA_FILE" "${OUTDIR}/real_windows_minus.fa" \
-    ${MIRANDA_FLAGS} \
-    -out "${REAL_DIR}/result_${SRNA_NAME}_minus" \
+    -out "${REAL_DIR}/result_${SRNA_NAME}" \
     -quiet
 }
 export -f run_one_trf
