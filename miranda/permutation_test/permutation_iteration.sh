@@ -7,7 +7,7 @@
 ## Description
 ## A single iteration of the permutation test. Shuffles either the pooled window
 ## targets (dinucleotide-preserving, k=2) or the query sequences (mononucleotide-
-## preserving, k=1), then runs miRanda (one process per tRF) against the single
+## preserving, k=1; each tRF seeded independently), then runs miRanda (one process per tRF) against the single
 ## pooled target file, and counts hits. Both strands are already present as
 ## separate records in the pooled target file, so no reverse-complementation is
 ## performed.
@@ -72,11 +72,19 @@ elif [ "$SHUFFLE_TARGET" == "query" ]; then
   QUERY_DIR="${ITER_DIR}/shuffled_queries"
   mkdir -p "$QUERY_DIR"
 
+  # Each tRF is shuffled in its own process, and uShuffle's k=1 shuffle is a
+  # Fisher-Yates permutation driven by C rand(). Re-using the same seed for every
+  # tRF would apply the SAME positional permutation to all same-length tRFs, so
+  # the shuffled queries stay near-identical and per-iteration hit counts are
+  # strongly correlated. Give every (iteration, tRF) pair a distinct seed.
+  # Assumes < 1000 query sequences.
+  I=0
   for SRNA_FILE in "${OUTDIR}/sRNA_queries"/*.fa; do
+    I=$((I + 1))
     python3 "${SCRIPTS}/miranda/permutation_test/shuffle_fasta.py" \
       "$SRNA_FILE" \
       "${QUERY_DIR}/$(basename "$SRNA_FILE")" \
-      --seed "$ITER" \
+      --seed $((ITER * 1000 + I)) \
       --klet 1
   done
 
