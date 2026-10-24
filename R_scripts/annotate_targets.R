@@ -47,6 +47,7 @@ tRF_infomation = tRF_infomation %>%
 # miRanda query names now arrive as ">tDR-55:76-Ala-AGC-1|tRF_1", carrying both
 # the tDRnamer name and the original unique id joined by "|". Strip the ">",
 # split on "|" into a tDRnamer column and the unique tRF id used as the key.
+
 data = data %>%
   dplyr::mutate(
     tRF      = stringr::str_remove(tRF, '^>'),
@@ -279,24 +280,30 @@ blast_output = read.csv(file = 'import/transcriptome_assembly/mouse_embryo_assem
 
 open_reading_frames_annotated = merge(open_reading_frames, blast_output, by = 'ORF_ID')
 
+# Keep sense ORFs only (BED strand "+", same direction as the transcript)
 open_reading_frames_annotated_filtered = open_reading_frames_annotated %>%
+  dplyr::filter(V6 == "+") %>%
   group_by(target_id) %>%
   slice_max(bitscore, with_ties = FALSE) %>%
   ungroup()
 
 # Map ORFs to genomic coordinates
+# - BED starts are 0-based, so add 1.
+# - Use strand "*": mapFromTranscripts() only maps a "+" range onto transcripts
+#   on the "+" genomic strand, so ORFs on minus-strand transcripts were dropped.
 
 orfs_tx_ranges = GRanges(
   seqnames = open_reading_frames_annotated_filtered$target_id,
   ranges = IRanges(
-    start = open_reading_frames_annotated_filtered$ORF_start,
+    start = open_reading_frames_annotated_filtered$ORF_start + 1,
     end = open_reading_frames_annotated_filtered$ORF_end
   ),
-  strand = open_reading_frames_annotated_filtered$V6,
+  strand = "*",
   ORF_ID = open_reading_frames_annotated_filtered$ORF_ID
 )
 
 genomic_orfs = mapFromTranscripts(orfs_tx_ranges, exons_by_tx)
+genomic_orfs$tx_name = names(exons_by_tx)[genomic_orfs$transcriptsHits]
 
 # Build splicings dataframe
 
@@ -326,8 +333,10 @@ exon_gr <- GRanges(
   strand = splicings_df$exon_strand
 )
 
-# Find overlaps between exons and CDS
+# Find overlaps between exons and CDS, keeping only exons of the ORF's own
+# transcript (otherwise the CDS is assigned to any overlapping transcript)
 hits <- findOverlaps(exon_gr, genomic_orfs)
+hits <- hits[exons_df$tx_name[queryHits(hits)] == genomic_orfs$tx_name[subjectHits(hits)]]
 
 # For each overlap, get intersection region
 cds_ranges <- pintersect(exon_gr[queryHits(hits)], genomic_orfs[subjectHits(hits)])
